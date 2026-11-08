@@ -60,11 +60,11 @@ fun TargetsScreen(vm: TargetsViewModel, snackbar: SnackbarHostState) {
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         OutlinedTextField(
             value = query, onValueChange = { vm.query.value = it },
-            label = { Text("Buscar: nombre, HIP 91262, TYC 1-2-1, C/2023 A3…") },
+            label = { Text("Buscar: nombre, M31, NGC 7000, HIP 91262, C/2023 A3…") },
             singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         )
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(TargetCategory.SOLAR_SYSTEM, TargetCategory.NAMED_STAR, TargetCategory.DOUBLE_STAR, TargetCategory.SMALL_BODY, TargetCategory.USER_OBJECT)
+            listOf(TargetCategory.SOLAR_SYSTEM, TargetCategory.DEEP_SKY, TargetCategory.NAMED_STAR, TargetCategory.DOUBLE_STAR, TargetCategory.SMALL_BODY, TargetCategory.USER_OBJECT)
                 .forEach { cat -> FilterChip(selected = category == cat && query.isBlank(), onClick = { vm.query.value = ""; vm.category.value = cat }, label = { Text(cat.label) }) }
         }
         if (query.isBlank() && category == TargetCategory.SMALL_BODY) {
@@ -73,6 +73,10 @@ fun TargetsScreen(vm: TargetsViewModel, snackbar: SnackbarHostState) {
                 OutlinedButton(onClick = { mpcPicker.launch(arrayOf("text/*", "application/octet-stream")) }) { Text("Importar MPC") }
                 OutlinedButton(onClick = { showJplDialog = true }, enabled = !busy) { Text("JPL") }
             }
+        }
+        if (query.isBlank() && category == TargetCategory.DEEP_SKY) {
+            HintText("Los 110 Messier y los objetos hasta magnitud 10; primero los visibles ahora, del más brillante al más débil. " +
+                "Busca por nombre o designación para ver hasta magnitud 12. Datos: OpenNGC (CC-BY-SA 4.0).")
         }
         if (query.isBlank() && category == TargetCategory.USER_OBJECT) {
             Button(onClick = { showUserDialog = true }) { Text("Añadir objeto (AR/Dec J2000)") }

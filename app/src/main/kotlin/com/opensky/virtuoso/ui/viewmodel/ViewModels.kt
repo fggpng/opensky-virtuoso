@@ -274,13 +274,20 @@ class TargetsViewModel(c: AppContainer) : MountAwareViewModel(c) {
         val site = c.session.site()
         val now = c.clock.now()
         val targets = if (q.isBlank()) c.targets.list(cat) else c.targets.search(q)
-        val rows = targets.take(400).mapNotNull { t ->
+        val limit = if (cat == TargetCategory.DEEP_SKY && q.isBlank()) 700 else 400
+        val rows = targets.take(limit).mapNotNull { t ->
             runCatching {
                 val p = TargetResolver.position(t, now, site.location, site.weather)
                 TargetRow(t, p.horizontal.altDeg, p.horizontal.azDeg, p.magnitude ?: t.magnitude)
             }.getOrNull()
         }
-        return if (cat == TargetCategory.SMALL_BODY && q.isBlank()) rows.sortedBy { it.magnitude ?: 99.0 } else rows
+        return when {
+            q.isNotBlank() -> rows
+            cat == TargetCategory.SMALL_BODY -> rows.sortedBy { it.magnitude ?: 99.0 }
+            // Cielo profundo: primero lo que está sobre el horizonte, del más brillante al más débil.
+            cat == TargetCategory.DEEP_SKY -> rows.sortedWith(compareBy({ it.altDeg <= 0 }, { it.magnitude ?: 99.0 }))
+            else -> rows
+        }
     }
 
     fun goto(target: Target, confirmed: Boolean = false) = viewModelScope.launch {
