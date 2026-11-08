@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -21,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.opensky.virtuoso.control.Activity
+import com.opensky.virtuoso.control.Equipment
+import com.opensky.virtuoso.control.ObservingMode
 import com.opensky.virtuoso.location.LocationTimeManager
 import com.opensky.virtuoso.network.LinkState
 import com.opensky.virtuoso.network.wifi.WifiLinkState
@@ -61,6 +65,28 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        InfoCard("Equipo de observación") {
+            val setup = settings.opticalSetup()
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ObservingMode.entries.forEach { mode ->
+                    FilterChip(selected = setup.mode == mode, onClick = { vm.setObservingMode(mode) }, label = { Text(mode.shortLabel) })
+                }
+            }
+            if (setup.mode == ObservingMode.VISUAL) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Equipment.EYEPIECES.forEach { e ->
+                        FilterChip(selected = setup.eyepiece.id == e.id, onClick = { vm.setEyepiece(e.id) },
+                            label = { Text(e.name.removePrefix("Sky-Watcher ").removePrefix("Celestron ")) })
+                    }
+                }
+            }
+            Text(setup.summary)
+            HintText(
+                if (setup.usesCamera) "Seguimiento suave para fotografía. La exposición máxima por rotación de campo aparece en Objetivos y en Control."
+                else "Seguimiento visual. El % de precisión de la alineación se calcula con el campo de este ocular."
+            )
+        }
+
         InfoCard("Montura Sky-Watcher Virtuoso GTi") {
             val connected = mount != null && mount?.activity != Activity.DISCONNECTED
             when {

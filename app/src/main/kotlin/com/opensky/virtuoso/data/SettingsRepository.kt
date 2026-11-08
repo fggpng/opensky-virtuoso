@@ -13,6 +13,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.opensky.virtuoso.astronomy.ephemeris.MpcParser
 import com.opensky.virtuoso.control.ControllerConfig
+import com.opensky.virtuoso.control.Equipment
+import com.opensky.virtuoso.control.ObservingMode
+import com.opensky.virtuoso.control.OpticalSetup
 import com.opensky.virtuoso.control.PadMode
 import com.opensky.virtuoso.network.bridge.CoordinateEpoch
 import com.opensky.virtuoso.sensors.PhoneMounting
@@ -53,8 +56,11 @@ data class AppSettings(
     val temperatureC: Double = 10.0,
     // Sensores
     val phoneMounting: PhoneMounting = PhoneMounting.TOP_EDGE_ALONG_TUBE,
-    // Alineación: campo real del ocular de referencia (25 mm en 750 mm, 52° aparentes → ≈104′)
-    val referenceFieldDiameterArcmin: Double = 104.0,
+    // Equipo de observación: decide el campo de referencia (% de precisión), el modo de seguimiento
+    // (ocular o cámara), la velocidad del pad por defecto y la exposición máxima por rotación de campo.
+    val observingMode: ObservingMode = ObservingMode.VISUAL,
+    val eyepieceId: String = Equipment.EYEPIECES.first().id,
+    val barlowFactor: Double = 2.0,
     // Puente Stellarium
     val lx200Enabled: Boolean = true,
     val lx200Port: Int = 4030,
@@ -69,10 +75,13 @@ data class AppSettings(
     val padMode: PadMode = PadMode.ALT_AZ,
     val cometUrl: String = MpcParser.COMET_ELEMENTS_URL,
 ) {
+    fun opticalSetup() = OpticalSetup(observingMode, Equipment.eyepiece(eyepieceId), barlowFactor)
+
     fun controllerConfig() = ControllerConfig(
         minAltitudeDeg = minAltitudeDeg, maxAltitudeDeg = maxAltitudeDeg,
         invertAzimuth = invertAzimuth, invertAltitude = invertAltitude,
         sunAvoidanceDeg = sunAvoidanceDeg, maxRateDegPerSec = maxSlewRateDegPerSec,
+        trackingMode = opticalSetup().trackingMode,
     )
 }
 
@@ -116,7 +125,9 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val pressure = doublePreferencesKey("pressure")
         val temp = doublePreferencesKey("temp")
         val mounting = stringPreferencesKey("mounting")
-        val field = doublePreferencesKey("ref_field")
+        val obsMode = stringPreferencesKey("observing_mode")
+        val eyepiece = stringPreferencesKey("eyepiece")
+        val barlow = doublePreferencesKey("barlow_factor")
         val lxOn = booleanPreferencesKey("lx_on")
         val lxPort = intPreferencesKey("lx_port")
         val lxEpoch = stringPreferencesKey("lx_epoch")
@@ -158,7 +169,9 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
             pressureHpa = this[K.pressure] ?: d.pressureHpa,
             temperatureC = this[K.temp] ?: d.temperatureC,
             phoneMounting = enumOf(this[K.mounting], d.phoneMounting),
-            referenceFieldDiameterArcmin = this[K.field] ?: d.referenceFieldDiameterArcmin,
+            observingMode = enumOf(this[K.obsMode], d.observingMode),
+            eyepieceId = this[K.eyepiece] ?: d.eyepieceId,
+            barlowFactor = this[K.barlow] ?: d.barlowFactor,
             lx200Enabled = this[K.lxOn] ?: d.lx200Enabled,
             lx200Port = this[K.lxPort] ?: d.lx200Port,
             lx200Epoch = enumOf(this[K.lxEpoch], d.lx200Epoch),
@@ -181,7 +194,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.manualLoc] = useManualLocation; p[K.lat] = manualLatitude; p[K.lon] = manualLongitude
         p[K.elev] = manualElevationM; p[K.sysTz] = useSystemTimeZone; p[K.utcOff] = manualUtcOffsetHours
         p[K.dst] = dstEnabled; p[K.ntp] = ntpServer; p[K.pressure] = pressureHpa; p[K.temp] = temperatureC
-        p[K.mounting] = phoneMounting.name; p[K.field] = referenceFieldDiameterArcmin
+        p[K.mounting] = phoneMounting.name
+        p[K.obsMode] = observingMode.name; p[K.eyepiece] = eyepieceId; p[K.barlow] = barlowFactor
         p[K.lxOn] = lx200Enabled; p[K.lxPort] = lx200Port; p[K.lxEpoch] = lx200Epoch.name
         p[K.stOn] = stellariumEnabled; p[K.stPort] = stellariumPort; p[K.stEpoch] = stellariumEpoch.name
         p[K.night] = nightMode; p[K.screenOn] = keepScreenOn; p[K.padRate] = padRateIndex

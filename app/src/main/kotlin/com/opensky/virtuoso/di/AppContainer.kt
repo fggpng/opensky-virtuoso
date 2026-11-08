@@ -63,8 +63,8 @@ class AppContainer(context: Context) {
                 .collect { (manual, lat, lon) -> if (manual) sensors.updateLocation(lat, lon, settings.current.manualElevationM) }
         }
         appScope.launch {
-            settings.settings.map { it.referenceFieldDiameterArcmin }.distinctUntilChanged()
-                .collect { alignment.referenceFieldRadiusArcmin = it / 2 }
+            settings.settings.map { it.opticalSetup().referenceRadiusArcmin }.distinctUntilChanged()
+                .collect { alignment.referenceFieldRadiusArcmin = it }
         }
     }
 }

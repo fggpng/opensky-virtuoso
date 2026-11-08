@@ -66,6 +66,9 @@ fun ControlScreen(vm: ControlViewModel, snackbar: SnackbarHostState) {
             LabeledValue("Actividad", m?.activity?.name ?: "—")
             m?.target?.let { LabeledValue("Objetivo", it.name, monospace = false) }
             m?.pointing?.let { LabeledValue("Az / Alt", "${it.azText()}  ${it.altText()}") }
+            m?.pointing?.let { p -> vm.maxExposureAt(p) }?.let {
+                LabeledValue("Exposición máx. (rotación de campo)", com.opensky.virtuoso.control.FieldRotation.format(it))
+            }
             m?.pointingApparent?.let { LabeledValue("AR / Dec (JNow)", "${it.raText()}  ${it.decText()}") }
             m?.pointingJ2000?.let { LabeledValue("AR / Dec (J2000)", "${it.raText()}  ${it.decText()}") }
             m?.let { LabeledValue("Encoders Az / Alt", "%.3f°  %.3f°".format(it.encoderAzDeg ?: 0.0, it.encoderAltDeg ?: 0.0)) }

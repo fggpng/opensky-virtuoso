@@ -45,8 +45,10 @@ class MountControllerTest {
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
         val clock = OffsetAstroClock()
         val alignment = AlignmentManager()
+        var trackingMode = TrackingMode.VISUAL
         val controller = MountController(client, alignment, scope, clock, { site }, {
-            ControllerConfig(minAltitudeDeg = -5.0, trackingUpdateMs = 400, pollIntervalMs = 300, gotoSpeedDegPerSec = 3.5 * 25)
+            ControllerConfig(minAltitudeDeg = -5.0, trackingUpdateMs = 400, pollIntervalMs = 300, gotoSpeedDegPerSec = 3.5 * 25,
+                trackingMode = trackingMode)
         })
         val catalog = TargetCatalog()
         try {
@@ -120,6 +122,22 @@ class MountControllerTest {
             controller.manualStop()
             val back = azOffsetFromTargetArcmin() - before
             assertTrue("al volver con ◀ quedó $back′ (antes $kept′)", abs(back) < 0.4 * abs(kept))
+
+            // Modo cámara: mismo objetivo, seguimiento suave; debe mantenerlo sin reposicionar.
+            trackingMode = TrackingMode.IMAGING
+            val r2 = controller.goto(probe, trackAfter = true)
+            assertTrue("$r2", r2 is GotoResult.Success)
+            val samples = mutableListOf<Double>()
+            repeat(8) {
+                delay(500)
+                val (a2, e2) = controller.readEncoders()
+                val (ta2, te2) = trueEncodersFor(probe)
+                samples += max(abs(Angles.normPi(a2 - ta2)) * kotlin.math.cos(e2), abs(e2 - te2)) / ARCMIN
+            }
+            assertEquals(Activity.TRACKING, controller.state.value.activity)
+            assertTrue("errores en modo cámara: $samples", samples.all { it < 5.0 })
+            // Estable: el error no salta entre muestras (sin reposicionamientos).
+            assertTrue("saltos: $samples", samples.zipWithNext().all { (x, y) -> abs(x - y) < 0.5 })
 
             controller.stopAll()
             assertEquals(Activity.IDLE, controller.state.value.activity)

@@ -50,6 +50,8 @@ data class ControllerConfig(
     val maxRateDegPerSec: Double = 3.5,
     /** Segunda pasada corta para compensar el movimiento del cielo durante el GoTo. */
     val refineGoto: Boolean = true,
+    /** VISUAL (ocular) o IMAGING (cámara): ver [TrackingMode]. */
+    val trackingMode: TrackingMode = TrackingMode.VISUAL,
 )
 
 data class MountState(
