@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+**/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+/tools/catalog-builder/salida/
+
+# Claves de firma: viven en los secretos de GitHub, nunca en el repositorio
+*.jks
+*.keystore
+secretos*.txt
