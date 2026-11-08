@@ -11,6 +11,7 @@ import com.opensky.virtuoso.astronomy.EarthOrientation
 import com.opensky.virtuoso.astronomy.HorizontalCoord
 import com.opensky.virtuoso.astronomy.math.Angles
 import com.opensky.virtuoso.astronomy.math.HOUR
+import com.opensky.virtuoso.control.FieldRotation
 import com.opensky.virtuoso.control.GotoResult
 import com.opensky.virtuoso.control.MountState
 import com.opensky.virtuoso.control.PadDirection
@@ -94,6 +95,16 @@ data class ClockInfo(val utc: String, val local: String, val lst: String, val zo
 
 class HomeViewModel(c: AppContainer) : MountAwareViewModel(c) {
     val session = c.session.state
+
+    /** Cambia de configuración y ajusta la velocidad del pad a la recomendada para ella. */
+    fun setObservingMode(mode: com.opensky.virtuoso.control.ObservingMode) = viewModelScope.launch {
+        c.settings.update { s ->
+            if (s.observingMode == mode) s
+            else s.copy(observingMode = mode).let { n -> n.copy(padRateIndex = n.opticalSetup().defaultPadRateIndex) }
+        }
+    }
+
+    fun setEyepiece(id: String) = viewModelScope.launch { c.settings.update { it.copy(eyepieceId = id) } }
     val wifi = c.wifi.state
     val location = c.locationTime.location
     val time = c.locationTime.time
@@ -253,7 +264,11 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
     }
 }
 
-data class TargetRow(val target: Target, val altDeg: Double, val azDeg: Double, val magnitude: Double?)
+data class TargetRow(
+    val target: Target, val altDeg: Double, val azDeg: Double, val magnitude: Double?,
+    /** Exposición máxima por rotación de campo (s, 1 px en las esquinas); null con ocular. */
+    val maxExposureSec: Double? = null,
+)
 
 class TargetsViewModel(c: AppContainer) : MountAwareViewModel(c) {
     val category = MutableStateFlow(TargetCategory.SOLAR_SYSTEM)
@@ -275,10 +290,13 @@ class TargetsViewModel(c: AppContainer) : MountAwareViewModel(c) {
         val now = c.clock.now()
         val targets = if (q.isBlank()) c.targets.list(cat) else c.targets.search(q)
         val limit = if (cat == TargetCategory.DEEP_SKY && q.isBlank()) 700 else 400
+        val setup = c.settings.current.opticalSetup()
+        val latRad = Math.toRadians(site.location.latitudeDeg)
         val rows = targets.take(limit).mapNotNull { t ->
             runCatching {
                 val p = TargetResolver.position(t, now, site.location, site.weather)
-                TargetRow(t, p.horizontal.altDeg, p.horizontal.azDeg, p.magnitude ?: t.magnitude)
+                val maxExp = if (p.horizontal.alt > 0) FieldRotation.maxExposureSec(setup, latRad, p.horizontal.az, p.horizontal.alt) else null
+                TargetRow(t, p.horizontal.altDeg, p.horizontal.azDeg, p.magnitude ?: t.magnitude, maxExp)
             }.getOrNull()
         }
         return when {
@@ -351,6 +369,13 @@ class TargetsViewModel(c: AppContainer) : MountAwareViewModel(c) {
 }
 
 class ControlViewModel(c: AppContainer) : MountAwareViewModel(c) {
+    /** Exposición máxima por rotación de campo donde apunta ahora el tubo (null con ocular). */
+    fun maxExposureAt(p: com.opensky.virtuoso.astronomy.HorizontalCoord): Double? {
+        val lat = c.session.siteOrNull()?.location?.latitudeDeg ?: return null
+        if (p.alt <= 0) return null
+        return FieldRotation.maxExposureSec(c.settings.current.opticalSetup(), Math.toRadians(lat), p.az, p.alt)
+    }
+
     /** Serializa pulsar/soltar: el "soltar" nunca puede adelantarse al "pulsar". */
     private val padMutex = Mutex()
 

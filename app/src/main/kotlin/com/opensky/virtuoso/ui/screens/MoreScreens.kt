@@ -164,11 +164,15 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
             DoubleField("Presión (hPa)", s.pressureHpa) { v -> set { it.copy(pressureHpa = v.coerceIn(500.0, 1100.0)) } }
             DoubleField("Temperatura (°C)", s.temperatureC) { v -> set { it.copy(temperatureC = v.coerceIn(-40.0, 50.0)) } }
         }
-        InfoCard("Alineación") {
-            DoubleField("Campo real del ocular de referencia (′)", s.referenceFieldDiameterArcmin) { v ->
-                set { it.copy(referenceFieldDiameterArcmin = v.coerceIn(5.0, 300.0)) }
+        InfoCard("Equipo y alineación") {
+            val setup = s.opticalSetup()
+            LabeledValue("Configuración activa", setup.mode.shortLabel, monospace = false)
+            LabeledValue("Campo de referencia (radio)", "%.0f′".format(setup.referenceRadiusArcmin))
+            DoubleField("Factor real del Barlow con la R50", s.barlowFactor) { v ->
+                set { it.copy(barlowFactor = v.coerceIn(1.5, 3.5)) }
             }
-            HintText("Campo real = campo aparente / aumento. Ej.: 25 mm en f=750 mm → 30×; 52°/30 = 1.73° ≈ 104′.")
+            HintText("Un Barlow «2×» suele dar 2.2–2.5× con cámara porque el sensor queda más lejos que un ocular. " +
+                "La configuración (ocular o cámara) se elige arriba en Inicio.")
         }
         InfoCard("Conexión con la montura") {
             TextSetting("IP", s.mountHost) { v -> set { it.copy(mountHost = v.trim()) } }

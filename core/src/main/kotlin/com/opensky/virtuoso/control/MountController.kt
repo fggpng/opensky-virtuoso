@@ -357,7 +357,16 @@ class MountController(
                 val errAz = Angles.normPi(e0.first - az)
                 val errAlt = e0.second - alt
                 val centering = holdFeedback || manualRates != (0.0 to 0.0)
-                if (!centering && max(abs(errAz) * cos(alt), abs(errAlt)) > 1.0 * DEG) {
+                val imaging = cfg.trackingMode == TrackingMode.IMAGING
+                val bigError = max(abs(errAz) * cos(alt), abs(errAlt)) > 1.0 * DEG
+                if (bigError && imaging && !centering) {
+                    // Con cámara no se reposiciona de golpe (arruinaría la toma): se avisa y la
+                    // corrección suave lo va acercando.
+                    if (_state.value.message == null) {
+                        _state.update { it.copy(message = "Desviación de seguimiento > 1°: revisa el encuadre (haz GoTo de nuevo si hace falta)") }
+                    }
+                }
+                if (!centering && !imaging && bigError) {
                     // Desviación grande (p. ej. tras un sync o un golpe): reposiciona y sigue.
                     client.gotoSteps(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, az + Angles.normPi(e1.first - az)))
                     client.gotoSteps(Axis.ALTITUDE, angleToSteps(Axis.ALTITUDE, e1.second))
@@ -367,8 +376,16 @@ class MountController(
                 val ffAz = Angles.normPi(e1.first - e0.first) / dt
                 val ffAlt = (e1.second - e0.second) / dt
                 lastFeedForward = ffAz to ffAlt
-                lastTrackRates = if (centering) ffAz to ffAlt
-                else (ffAz + TRACK_GAIN * errAz) to (ffAlt + TRACK_GAIN * errAlt)
+                lastTrackRates = when {
+                    centering -> ffAz to ffAlt
+                    imaging -> {
+                        // Corrección suave y acotada: como mucho ±[IMAGING_MAX_CORRECTION] sobre la
+                        // velocidad prevista, para que las estrellas no se alarguen en la foto.
+                        val lim = IMAGING_MAX_CORRECTION
+                        (ffAz + (IMAGING_GAIN * errAz).coerceIn(-lim, lim)) to (ffAlt + (IMAGING_GAIN * errAlt).coerceIn(-lim, lim))
+                    }
+                    else -> (ffAz + TRACK_GAIN * errAz) to (ffAlt + TRACK_GAIN * errAlt)
+                }
                 applyRates()
                 _state.update { if (it.lastError != null) it.copy(lastError = null) else it }
             } catch (e: CancellationException) {
@@ -514,5 +531,9 @@ class MountController(
     companion object {
         /** Ganancia proporcional del seguimiento (1/s): corrige la mitad del error por segundo. */
         const val TRACK_GAIN = 0.5
+        /** Ganancia del modo cámara (1/s): corrige un error en ~10 s en lugar de ~2 s. */
+        const val IMAGING_GAIN = 0.1
+        /** Corrección máxima del modo cámara: 0.5× sidérea (≈7.5″/s). */
+        const val IMAGING_MAX_CORRECTION = 0.5 * MountClient.SIDEREAL_RATE_RAD_S
     }
 }

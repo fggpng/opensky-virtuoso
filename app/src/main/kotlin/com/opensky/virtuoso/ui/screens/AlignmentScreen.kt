@@ -102,10 +102,12 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
                         }
                         OutlinedButton(onClick = { vm.refreshSuggestions() }) { Text("Actualizar lista") }
                     }
+                    val setup = settings.opticalSetup()
+                    HintText("Centra la estrella ${setup.centeringHint}.")
                     Button(
                         onClick = { vm.confirmCentered() }, enabled = !busy && (if (brightest) identified != null else current != null),
                         modifier = Modifier.fillMaxWidth(),
-                    ) { Text("Estrella centrada en el ocular ✓") }
+                    ) { Text(if (setup.usesCamera) "Estrella centrada en la cámara ✓" else "Estrella centrada en el ocular ✓") }
                 }
             }
         }

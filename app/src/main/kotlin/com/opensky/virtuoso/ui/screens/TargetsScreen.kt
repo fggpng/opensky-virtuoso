@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.opensky.virtuoso.control.FieldRotation
 import com.opensky.virtuoso.database.targets.SmallBodyTarget
 import com.opensky.virtuoso.database.targets.Target
 import com.opensky.virtuoso.database.targets.TargetCategory
@@ -161,7 +162,11 @@ private fun TargetDialog(row: TargetRow, onDismiss: () -> Unit, onGoto: () -> Un
                 row.magnitude?.let { Text("Magnitud ≈ %.1f".format(it)) }
                 if (row.altDeg <= 0) WarningText("Bajo el horizonte")
                 if (t.isSun) WarningText("Solo con filtro solar certificado de apertura completa. Tapa el buscador.")
-                HintText("«Sync» indica que el objeto YA está centrado en el ocular: mejora el modelo de apuntado.")
+                row.maxExposureSec?.let { s ->
+                    Text("Exposición máx. por rotación de campo: ${FieldRotation.format(s)} (1 px) · ${FieldRotation.format(s * 2)} (2 px)")
+                    HintText("Montura altazimutal: la imagen gira durante la toma. Al este u oeste se permiten exposiciones más largas que al sur o cerca del cenit.")
+                }
+                HintText("«Sync» indica que el objeto YA está centrado (en el ocular o en la pantalla de la cámara): mejora el modelo de apuntado.")
                 onDelete?.let { TextButton(onClick = it) { Text("Eliminar de la lista") } }
             }
         },

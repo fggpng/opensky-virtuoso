@@ -115,7 +115,7 @@ class TelescopeSession(
             _state.value = _state.value.copy(step = "Hablando con la montura (${t.description})…")
             val client = MountClient(t)
             val controller = MountController(client, alignment, scope, clock, ::site) { settings.current.controllerConfig() }
-            alignment.referenceFieldRadiusArcmin = s.referenceFieldDiameterArcmin / 2
+            alignment.referenceFieldRadiusArcmin = s.opticalSetup().referenceRadiusArcmin
             val info = controller.connect()
             _controller.value = controller
             startServers(controller)
