@@ -123,3 +123,12 @@ Notas:
   así no chocan con la firma de las versiones publicadas.
 - La primera vez, si tienes instalada una versión compilada en Android Studio con el id
   `com.opensky.virtuoso`, desinstálala antes de instalar la de GitHub.
+
+## Créditos de datos
+
+- **Cielo profundo** (`core/src/main/resources/catalogs/deepsky.tsv`): derivado de
+  [OpenNGC](https://github.com/mattiaverga/OpenNGC), © Mattia Verga y colaboradores,
+  licencia [CC-BY-SA-4.0](https://creativecommons.org/licenses/by-sa/4.0/). El archivo derivado se
+  distribuye bajo la misma licencia. Se regenera con `tools/deepsky/build_deepsky.py`.
+  Incluye los 110 objetos Messier (M102 = NGC 5866, la identificación más aceptada) y los objetos
+  NGC/IC hasta magnitud 12.

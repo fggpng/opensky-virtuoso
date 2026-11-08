@@ -17,6 +17,7 @@ import java.text.Normalizer
 
 enum class TargetCategory(val label: String) {
     SOLAR_SYSTEM("Sistema Solar"),
+    DEEP_SKY("Cielo profundo"),
     NAMED_STAR("Estrellas con nombre"),
     DOUBLE_STAR("Estrellas dobles"),
     SMALL_BODY("Cometas y asteroides"),
@@ -112,6 +113,7 @@ object TargetResolver {
             is StarTarget -> Quad(AstroEngine.starApparent(target.j2000, time, target.pmRaMasYr, target.pmDecMasYr), null, target.magnitude, null)
             is DoubleStarTarget -> Quad(AstroEngine.starApparent(target.star.j2000, time, target.star.pmRaMasYr, target.star.pmDecMasYr), null, target.magnitude, null)
             is UserTarget -> Quad(AstroEngine.j2000ToApparent(target.obj.j2000, time), null, target.magnitude, null)
+            is DeepSkyTarget -> Quad(AstroEngine.j2000ToApparent(target.obj.j2000, time), null, target.magnitude, null)
         }
         val hz = AstroEngine.apparentToHorizontal(apparent, time, location, weather, distanceKm)
         return TargetPosition(apparent, hz, distanceKm, mag, illum)
@@ -132,6 +134,7 @@ class TargetCatalog(
 
     fun list(category: TargetCategory): List<Target> = when (category) {
         TargetCategory.SOLAR_SYSTEM -> SolarSystemBody.entries.map { SolarSystemTarget(it) }
+        TargetCategory.DEEP_SKY -> DeepSkyCatalog.listed.map { DeepSkyTarget(it) }
         TargetCategory.NAMED_STAR -> BuiltInStars.namedStars.map { namedStarTarget(it) }
         TargetCategory.DOUBLE_STAR -> BuiltInStars.doubleStars.map { DoubleStarTarget(it) }
         TargetCategory.SMALL_BODY -> smallBodies().map { SmallBodyTarget(it) }
@@ -167,6 +170,8 @@ class TargetCatalog(
             val (a, b, c) = m.destructured
             return listOfNotNull(tycho2()?.findByTyc(a.toInt(), b.toInt(), c.toInt())?.let { tychoTarget(it) })
         }
+        // «M31», «NGC 7000», «IC434»: coincidencia exacta del catálogo de cielo profundo.
+        DeepSkyCatalog.findByDesignation(q)?.let { return listOf(DeepSkyTarget(it)) }
         val candidates = buildList {
             addAll(list(TargetCategory.SOLAR_SYSTEM))
             addAll(list(TargetCategory.NAMED_STAR))
@@ -174,7 +179,7 @@ class TargetCatalog(
             addAll(list(TargetCategory.SMALL_BODY))
             addAll(list(TargetCategory.USER_OBJECT))
         }
-        return candidates.mapNotNull { t ->
+        val scored = candidates.mapNotNull { t ->
             val keys = searchKeys(t)
             val score = keys.minOfOrNull { k ->
                 when {
@@ -185,7 +190,8 @@ class TargetCatalog(
                 }
             } ?: 99
             if (score < 99) score to t else null
-        }.sortedWith(compareBy({ it.first }, { it.second.magnitude ?: 99.0 })).take(limit).map { it.second }
+        } + DeepSkyCatalog.search(q).map { (score, o) -> score to DeepSkyTarget(o) }
+        return scored.sortedWith(compareBy({ it.first }, { it.second.magnitude ?: 99.0 })).take(limit).map { it.second }
     }
 
     private fun searchKeys(t: Target): List<String> = buildList {
@@ -197,6 +203,7 @@ class TargetCatalog(
             is DoubleStarTarget -> add(normalize(t.star.designation))
             is SmallBodyTarget -> { add(normalize(t.elements.designation)); add(normalize(t.elements.name)) }
             is UserTarget -> Unit
+            is DeepSkyTarget -> addAll(t.obj.searchKeys)
         }
     }
 
