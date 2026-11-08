@@ -148,4 +148,61 @@ class MountControllerTest {
             sim.close()
         }
     }
+
+    /**
+     * Caso real reportado: la montura se enciende apuntando al SUR (no en la posición de inicio
+     * hacia el norte) y sin orientación por sensores. El primer GoTo (Polaris) cae ~180° desviado;
+     * tras centrarla a mano y confirmar, la segunda estrella ya debe caer cerca.
+     */
+    @Test fun firstStarFixesA180DegreeStartingOffset() = runBlocking {
+        val upsideTruth = PointingModel(Mat3.fromRotationVector(0.4 * DEG, -0.3 * DEG, 180.0 * DEG), 0.3 * DEG, 0.0, 0.0)
+        val sim = MountSimulator(gotoTimeScale = 25.0).start()
+        val client = MountClient(UdpMountTransport("127.0.0.1", sim.boundPort), MountClient.Config(timeoutMs = 200, maxAttempts = 5))
+        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        val clock = OffsetAstroClock()
+        val alignment = AlignmentManager()
+        val controller = MountController(client, alignment, scope, clock, { site }, {
+            ControllerConfig(minAltitudeDeg = -5.0, trackingUpdateMs = 400, pollIntervalMs = 300, gotoSpeedDegPerSec = 3.5 * 25)
+        })
+        val catalog = TargetCatalog()
+        try {
+            controller.connect()
+            suspend fun trueEncodersFor(target: Target): Pair<Double, Double> =
+                upsideTruth.skyToMount(TargetResolver.position(target, clock.now(), site.location, site.weather).horizontal)!!
+            suspend fun errorDeg(target: Target): Double {
+                val (az, alt) = controller.readEncoders()
+                val (ta, te) = trueEncodersFor(target)
+                return max(abs(Angles.normPi(az - ta)) * kotlin.math.cos(alt), abs(alt - te)) / DEG
+            }
+            suspend fun centerOn(target: Target) {
+                repeat(2) {
+                    val (a, e) = trueEncodersFor(target)
+                    val (az, _) = controller.readEncoders()
+                    client.gotoSteps(Axis.AZIMUTH, controller.angleToSteps(Axis.AZIMUTH, az + Angles.normPi(a - az)))
+                    client.gotoSteps(Axis.ALTITUDE, controller.angleToSteps(Axis.ALTITUDE, e))
+                    client.waitUntilStopped(Axis.AZIMUTH, 20_000, 30); client.waitUntilStopped(Axis.ALTITUDE, 20_000, 30)
+                }
+            }
+            alignment.begin(AlignmentMode.SYNMATRIX_AUTO)
+            val polaris = catalog.search("Polaris").first()
+            assertTrue(controller.goto(polaris, trackAfter = true) is GotoResult.Success)
+            val firstError = errorDeg(polaris)
+            assertTrue("el primer GoTo debía caer muy lejos: $firstError°", firstError > 150)
+
+            centerOn(polaris)                                   // el usuario la busca con el pad
+            controller.sync(polaris, asAlignmentStar = true)    // «Estrella centrada ✓»
+
+            val stars = alignment.suggestStars(catalog, clock.now(), site.location, count = 4, minAltDeg = 20.0, maxAltDeg = 75.0)
+            val second = stars.first { (s, _) -> s.id != polaris.id }.first
+            assertTrue(controller.goto(second, trackAfter = true) is GotoResult.Success)
+            val secondError = errorDeg(second)
+            // Con una sola estrella no se conoce la inclinación de la base: error de pocos grados como mucho.
+            assertTrue("segundo GoTo tras corregir con Polaris: $secondError°", secondError < 3.0)
+            println("Primer GoTo: %.1f° de error; segundo tras confirmar Polaris: %.2f°".format(firstError, secondError))
+        } finally {
+            controller.disconnect()
+            scope.cancel()
+            sim.close()
+        }
+    }
 }
