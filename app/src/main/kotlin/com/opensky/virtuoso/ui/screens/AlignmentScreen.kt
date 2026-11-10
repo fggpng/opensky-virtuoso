@@ -55,6 +55,9 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (mount == null) WarningText("Conecta la montura en Inicio antes de alinear.")
+        else if (mount?.startPosition == com.opensky.virtuoso.control.StartPosition.UNCONFIRMED && state.allSamples.isEmpty()) {
+            WarningText("Confirma primero la posición de inicio en Inicio (tubo horizontal hacia el norte). Sin eso los GoTo están bloqueados.")
+        }
 
         InfoCard("Modo de alineación") {
             AlignmentMode.entries.forEach { mode ->

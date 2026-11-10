@@ -105,6 +105,41 @@ class HomeViewModel(c: AppContainer) : MountAwareViewModel(c) {
     }
 
     fun setEyepiece(id: String) = viewModelScope.launch { c.settings.update { it.copy(eyepieceId = id) } }
+
+    /** Estrellas de alineación/sync ya tomadas: si hay alguna, la posición de inicio deja de importar. */
+    val alignmentSamples: StateFlow<Int> = c.alignment.state.map { it.allSamples.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    private val _checking = MutableStateFlow(false)
+    val checking: StateFlow<Boolean> = _checking.asStateFlow()
+
+    /** Poka-yoke: «el tubo está horizontal y apunta al norte», en el sitio de esta sesión. */
+    fun confirmHome() = viewModelScope.launch {
+        val ctrl = requireController() ?: return@launch
+        runCatching {
+            ctrl.confirmHomePosition()
+            c.alignment.reset()
+        }.onSuccess { _message.value = "Posición de inicio confirmada (horizontal, norte). Ahora alinea con estrellas." }
+            .onFailure { _message.value = "Error: ${it.message}" }
+    }
+
+    /** Apoya el teléfono sobre el tubo: compara su altura (gravedad) con la que cree la app. */
+    fun checkAltitudeWithPhone() = viewModelScope.launch {
+        val ctrl = requireController() ?: return@launch
+        _checking.value = true
+        try {
+            val o = c.sensors.captureAverage(2000)
+            if (o == null) { _message.value = "Sin lecturas del sensor del teléfono"; return@launch }
+            val r = ctrl.checkAltitude(o.altitudeDeg)
+            _message.value = if (r.ok) "✓ Altura correcta: la app cree %.1f°, el teléfono mide %.1f°".format(r.believedDeg, r.measuredDeg)
+            else "✗ No coincide: la app cree %.1f° y el teléfono mide %.1f°. Confirma de nuevo la posición de inicio antes de cualquier GoTo."
+                .format(r.believedDeg, r.measuredDeg)
+        } catch (e: Exception) {
+            _message.value = "Error: ${e.message}"
+        } finally {
+            _checking.value = false
+        }
+    }
     val wifi = c.wifi.state
     val location = c.locationTime.location
     val time = c.locationTime.time
@@ -226,7 +261,7 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
         _busy.value = true
         try {
             val r = ctrl.goto(star, trackAfter = true)
-            _message.value = if (r is GotoResult.Success) "Centra ${star.name} con el pad y pulsa «Centrada»" else describe(r)
+            _message.value = if (r is GotoResult.Success) "Centra ${star.name} con el pad y pulsa «Estrella centrada ✓»" else describe(r)
         } finally { _busy.value = false }
     }
 

@@ -168,12 +168,38 @@ class MountController(
      * Inicializa los encoders con la orientación medida por la IMU del teléfono
      * (acimut verdadero y altura, en grados). Sustituye al "punto de inicio" nivelado al Norte.
      */
-    suspend fun setInitialOrientation(azDeg: Double, altDeg: Double) {
+    suspend fun setInitialOrientation(azDeg: Double, altDeg: Double, source: StartPosition = StartPosition.PHONE) {
         stopAll()
         client.setPosition(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, Angles.normPi(azDeg * DEG)))
         client.setPosition(Axis.ALTITUDE, angleToSteps(Axis.ALTITUDE, altDeg * DEG))
         refreshPointing()
-        _state.update { it.copy(message = "Orientación inicial: Az %.1f°, Alt %.1f°".format(azDeg, altDeg)) }
+        _state.update { it.copy(startPosition = source, message = "Orientación inicial: Az %.1f°, Alt %.1f°".format(azDeg, altDeg)) }
+    }
+
+    /**
+     * «El tubo está horizontal y apunta al norte»: fija los encoders en Az 0°, Alt 0° sin tener que
+     * apagar la montura. Se usa en cada sesión, en el sitio de observación.
+     */
+    suspend fun confirmHomePosition() = setInitialOrientation(0.0, 0.0, StartPosition.HOME)
+
+    /**
+     * Compara la altura que cree la app con la medida por el teléfono apoyado en el tubo (la altura
+     * viene de la gravedad, fiable aunque haya metal cerca). Sin alineación con estrellas, un
+     * desacuerdo vuelve a dejar la posición SIN CONFIRMAR, y el GoTo queda bloqueado.
+     */
+    suspend fun checkAltitude(measuredAltDeg: Double, toleranceDeg: Double = ALTITUDE_CHECK_TOLERANCE_DEG): AltitudeCheck {
+        val believed = refreshPointing().pointing?.altDeg ?: throw MountException("Montura no conectada")
+        val check = AltitudeCheck(believed, measuredAltDeg, toleranceDeg)
+        val aligned = alignment.state.value.allSamples.isNotEmpty()
+        _state.update {
+            when {
+                check.ok -> it.copy(message = "Altura verificada: la app cree %.1f°, el teléfono mide %.1f°".format(believed, measuredAltDeg))
+                aligned -> it.copy(message = "¡Atención! La app cree %.1f° de altura y el teléfono mide %.1f°. Revisa la alineación.".format(believed, measuredAltDeg))
+                else -> it.copy(startPosition = StartPosition.UNCONFIRMED,
+                    message = "La app cree %.1f° de altura pero el teléfono mide %.1f°: confirma de nuevo la posición de inicio.".format(believed, measuredAltDeg))
+            }
+        }
+        return check
     }
 
     // ---------------------------------------------------------------- seguridad
@@ -218,6 +244,9 @@ class MountController(
         val first = TargetResolver.position(target, now0, s.location, s.weather)
         if (!allowNearSun) sunWarning(target, first.horizontal, now0)?.let { return GotoResult.Rejected(it, needsConfirmation = true) }
         altitudeViolation(target.name, first.horizontal.altDeg)?.let { return GotoResult.Rejected(it) }
+        if (_state.value.startPosition == StartPosition.UNCONFIRMED && alignment.state.value.allSamples.isEmpty()) {
+            return GotoResult.Rejected(START_UNCONFIRMED_MESSAGE)
+        }
 
         abortRequested.set(false)
         stopTracking(stopMotors = false)
@@ -531,6 +560,11 @@ class MountController(
     companion object {
         /** Ganancia proporcional del seguimiento (1/s): corrige la mitad del error por segundo. */
         const val TRACK_GAIN = 0.5
+        /** Diferencia máxima aceptada entre la altura creída y la medida por el teléfono. */
+        const val ALTITUDE_CHECK_TOLERANCE_DEG = 5.0
+        const val START_UNCONFIRMED_MESSAGE =
+            "Primero confirma la posición de inicio en Inicio: deja el tubo horizontal hacia el norte y pulsa «El tubo está " +
+                "horizontal hacia el norte», o mide con el teléfono sobre el tubo. Sin eso el GoTo podría ir a cualquier lado."
         /** Ganancia del modo cámara (1/s): corrige un error en ~10 s en lugar de ~2 s. */
         const val IMAGING_GAIN = 0.1
         /** Corrección máxima del modo cámara: 0.5× sidérea (≈7.5″/s). */
