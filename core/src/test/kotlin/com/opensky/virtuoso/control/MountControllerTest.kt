@@ -183,6 +183,8 @@ class MountControllerTest {
                     client.waitUntilStopped(Axis.AZIMUTH, 20_000, 30); client.waitUntilStopped(Axis.ALTITUDE, 20_000, 30)
                 }
             }
+            // El usuario confirma «horizontal hacia el norte» aunque en realidad el tubo apunta al sur.
+            controller.confirmHomePosition()
             alignment.begin(AlignmentMode.SYNMATRIX_AUTO)
             val polaris = catalog.search("Polaris").first()
             assertTrue(controller.goto(polaris, trackAfter = true) is GotoResult.Success)

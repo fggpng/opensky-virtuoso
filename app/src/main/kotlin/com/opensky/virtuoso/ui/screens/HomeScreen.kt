@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.opensky.virtuoso.control.Activity
 import com.opensky.virtuoso.control.Equipment
 import com.opensky.virtuoso.control.ObservingMode
+import com.opensky.virtuoso.control.StartPosition
 import com.opensky.virtuoso.location.LocationTimeManager
 import com.opensky.virtuoso.network.LinkState
 import com.opensky.virtuoso.network.wifi.WifiLinkState
@@ -59,6 +60,8 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
     val clock by vm.clock.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val alignedSamples by vm.alignmentSamples.collectAsStateWithLifecycle()
+    val checking by vm.checking.collectAsStateWithLifecycle()
     MessageEffect(message, snackbar, vm::clearMessage)
 
     Column(
@@ -125,6 +128,26 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
             }
         }
 
+        val m0 = mount
+        if (m0 != null && m0.activity != Activity.DISCONNECTED && !session.connecting) {
+            InfoCard("Posición de inicio") {
+                val unconfirmed = m0.startPosition == StartPosition.UNCONFIRMED && alignedSamples == 0
+                if (unconfirmed) WarningText("Sin confirmar: el GoTo está bloqueado hasta que la confirmes.")
+                else LabeledValue("Estado", if (alignedSamples > 0) "Alineada con estrellas" else m0.startPosition.label, monospace = false)
+                m0.pointing?.let { p ->
+                    Text("La app cree que el tubo apunta a: Alt %.1f° · Az %.0f° (%s)".format(p.altDeg, p.azDeg, cardinal(p.azDeg)))
+                }
+                HintText("En cada sesión, ya en el sitio: deja el tubo horizontal y apuntando al norte (usa la brújula de la app: " +
+                    "ya corrige la declinación magnética) y pulsa el botón. Si el tubo se ve distinto de lo que dice la app, no hagas GoTo.")
+                Button(onClick = { vm.confirmHome() }, Modifier.fillMaxWidth()) { Text("El tubo está horizontal hacia el norte") }
+                OutlinedButton(onClick = onOpenSensors, Modifier.fillMaxWidth()) { Text("Medir la posición con el teléfono sobre el tubo") }
+                OutlinedButton(onClick = { vm.checkAltitudeWithPhone() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (checking) "Midiendo… no muevas el teléfono" else "Comprobar altura con el teléfono")
+                }
+                HintText("Comprobar: apoya el teléfono plano sobre el tubo 2 s. Si la altura no coincide (más de 5°), el GoTo se bloquea.")
+            }
+        }
+
         InfoCard("Ubicación") {
             if (settings.useManualLocation) {
                 LabeledValue("Fuente", "Manual (Ajustes)", monospace = false)
@@ -159,4 +182,11 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
             FilledTonalButton(onClick = onOpenSensors) { Text("Abrir orientación por sensores") }
         }
     }
+}
+
+
+/** Punto cardinal aproximado de un acimut (0° = norte, 90° = este). */
+private fun cardinal(azDeg: Double): String {
+    val names = listOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+    return names[(((azDeg % 360 + 360) % 360 + 22.5) / 45).toInt() % 8]
 }

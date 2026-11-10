@@ -54,8 +54,26 @@ data class ControllerConfig(
     val trackingMode: TrackingMode = TrackingMode.VISUAL,
 )
 
+/**
+ * De dónde sale la posición de partida de los encoders. La montura solo cuenta pasos desde que
+ * se enciende: si nadie confirma dónde estaba el tubo, el primer GoTo puede ir a cualquier lado.
+ */
+enum class StartPosition(val label: String) {
+    UNCONFIRMED("Sin confirmar"),
+    HOME("Horizontal hacia el norte (confirmado)"),
+    PHONE("Medida con el teléfono sobre el tubo"),
+}
+
+/** Resultado de comparar la altura que cree la app con la que mide el teléfono sobre el tubo. */
+data class AltitudeCheck(val believedDeg: Double, val measuredDeg: Double, val toleranceDeg: Double) {
+    val differenceDeg: Double get() = measuredDeg - believedDeg
+    val ok: Boolean get() = kotlin.math.abs(differenceDeg) <= toleranceDeg
+}
+
 data class MountState(
     val link: LinkState = LinkState.DISCONNECTED,
+    /** Poka-yoke: sin posición de partida confirmada ni estrellas de alineación, no se permite GoTo. */
+    val startPosition: StartPosition = StartPosition.UNCONFIRMED,
     val info: MountInfo? = null,
     val activity: Activity = Activity.DISCONNECTED,
     val encoderAzDeg: Double? = null,
