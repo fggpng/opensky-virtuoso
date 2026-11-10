@@ -147,7 +147,8 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
         InfoCard("Ejes") {
             SettingSwitch("Invertir acimut", s.invertAzimuth) { v -> set { it.copy(invertAzimuth = v) } }
             SettingSwitch("Invertir altura", s.invertAltitude) { v -> set { it.copy(invertAltitude = v) } }
-            HintText("Si al pulsar ▲ el tubo baja (o ▶ gira al revés), invierte el eje correspondiente y vuelve a hacer la orientación inicial.")
+            HintText("Solo si al pulsar ▲ el tubo baja (o ▶ gira al revés). Cambiarlo con la montura conectada detiene todo, " +
+                "borra la alineación y pide confirmar de nuevo la posición de inicio.")
         }
         InfoCard("Ubicación y hora") {
             SettingSwitch("Usar coordenadas manuales", s.useManualLocation) { v -> set { it.copy(useManualLocation = v) } }
@@ -192,6 +193,11 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
         }
         InfoCard("Datos") {
             TextSetting("URL de elementos de cometas (MPC)", s.cometUrl) { v -> set { it.copy(cometUrl = v.trim()) } }
+        }
+        InfoCard("Diagnóstico") {
+            HintText("La app guarda un registro de lo que pasa con la montura: órdenes enviadas, GoTo, estrellas confirmadas, " +
+                "paradas y alarmas. Si algo falla, expórtalo y compártelo: muestra exactamente qué ocurrió.")
+            Button(onClick = { vm.exportDiagnostics() }, modifier = Modifier.fillMaxWidth()) { Text("Exportar registro de diagnóstico") }
         }
     }
 }

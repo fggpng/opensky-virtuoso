@@ -106,6 +106,12 @@ class HomeViewModel(c: AppContainer) : MountAwareViewModel(c) {
 
     fun setEyepiece(id: String) = viewModelScope.launch { c.settings.update { it.copy(eyepieceId = id) } }
 
+    fun clearAlert() { controller?.clearAlert() }
+
+    /** ¿Hay ubicación real? Sin ella la app bloquea GoTo, sync y seguimiento. */
+    val locationKnown: StateFlow<Boolean> = ticker(2_000).map { c.session.siteKnown() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     /** Estrellas de alineación/sync ya tomadas: si hay alguna, la posición de inicio deja de importar. */
     val alignmentSamples: StateFlow<Int> = c.alignment.state.map { it.allSamples.size }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
@@ -233,6 +239,12 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
 
     private val isBrightestMode get() = alignment.value.mode == AlignmentMode.BRIGHTEST_ONE || alignment.value.mode == AlignmentMode.BRIGHTEST_TWO
 
+    /** Estrella que parece equivocada: (estrella, desvío °, límite °). La UI pide confirmar. */
+    data class DoubtfulStar(val star: StarTarget, val deviationDeg: Double, val limitDeg: Double)
+    private val _doubtful = MutableStateFlow<DoubtfulStar?>(null)
+    val doubtful: StateFlow<DoubtfulStar?> = _doubtful.asStateFlow()
+    fun dismissDoubtful() { _doubtful.value = null }
+
     fun begin(mode: AlignmentMode) {
         c.alignment.begin(mode)
         _current.value = null; _identified.value = null
@@ -279,11 +291,24 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
 
     fun selectStar(star: StarTarget) { _current.value = star }
 
-    /** El usuario confirma que la estrella está centrada en el ocular. */
-    fun confirmCentered() = viewModelScope.launch {
+    /**
+     * El usuario confirma que la estrella está centrada. Poka-yoke: si el tubo está lejos de donde
+     * el modelo esperaba esa estrella (estrella equivocada, el error más común), se pide confirmar
+     * antes de registrarla; [force] = true tras la confirmación.
+     */
+    fun confirmCentered(force: Boolean = false) = viewModelScope.launch {
         val ctrl = requireController() ?: return@launch
         val star = if (isBrightestMode) _identified.value?.first else _current.value
         if (star == null) { _message.value = if (isBrightestMode) "Primero pulsa «Identificar»" else "Elige una estrella"; return@launch }
+        _doubtful.value = null
+        if (!force) {
+            val limit = ctrl.syncDeviationLimitDeg()
+            val dev = runCatching { ctrl.syncDeviationDeg(star) }.getOrNull()
+            if (limit != null && dev != null && dev > limit) {
+                _doubtful.value = DoubtfulStar(star, dev, limit)
+                return@launch
+            }
+        }
         _busy.value = true
         try {
             val state = ctrl.sync(star, asAlignmentStar = true)
@@ -414,26 +439,38 @@ class ControlViewModel(c: AppContainer) : MountAwareViewModel(c) {
     /** Serializa pulsar/soltar: el "soltar" nunca puede adelantarse al "pulsar". */
     private val padMutex = Mutex()
 
+    /**
+     * Pulsar/soltar corren en el ámbito de la APLICACIÓN, no en el de la pantalla: si el usuario
+     * cambia de pestaña o gira el teléfono con una flecha pulsada, el «soltar» igual llega a la
+     * montura (antes podía cancelarse y el tubo seguía girando).
+     */
     fun press(direction: PadDirection) {
-        viewModelScope.launch {
+        c.appScope.launch {
             padMutex.withLock {
                 val ctrl = requireController() ?: return@withLock
                 val s = c.settings.current
+                com.opensky.virtuoso.control.Diagnostics.log("PAD pulsado: $direction a ${com.opensky.virtuoso.control.PAD_RATES[s.padRateIndex]}× (${s.padMode})")
                 runCatching { ctrl.manualStart(direction, s.padRateIndex, s.padMode) }.onFailure { _message.value = it.message }
             }
         }
     }
 
     fun release() {
-        viewModelScope.launch {
-            padMutex.withLock { runCatching { controller?.manualStop() }.onFailure { _message.value = it.message } }
+        c.appScope.launch {
+            padMutex.withLock {
+                com.opensky.virtuoso.control.Diagnostics.log("PAD soltado")
+                runCatching { controller?.manualStop() }.onFailure { _message.value = it.message }
+            }
         }
     }
 
     fun setRate(index: Int) = viewModelScope.launch { c.settings.update { it.copy(padRateIndex = index) } }
     fun setMode(mode: PadMode) = viewModelScope.launch { c.settings.update { it.copy(padMode = mode) } }
 
-    fun stopAll() = viewModelScope.launch { controller?.stopAll() }
+    fun stopAll() = c.appScope.launch {
+        com.opensky.virtuoso.control.Diagnostics.log("DETENER TODO pulsado")
+        controller?.stopAll()
+    }
 
     fun startTracking(rate: TrackingRate) = viewModelScope.launch {
         val ctrl = requireController() ?: return@launch
@@ -462,6 +499,26 @@ class MoreViewModel(c: AppContainer) : MountAwareViewModel(c) {
     }
 
     fun importCatalog(uris: List<Uri>) = viewModelScope.launch { c.catalogs.import(uris) }
+
+    /** Junta el registro de diagnóstico con un resumen del equipo y abre «Compartir». */
+    fun exportDiagnostics() = viewModelScope.launch(Dispatchers.IO) {
+        val s = c.settings.current
+        val m = c.session.controller.value?.state?.value
+        val a = c.alignment.state.value
+        val header = buildString {
+            appendLine("OpenSky Virtuoso — diagnóstico")
+            appendLine("App: ${com.opensky.virtuoso.BuildConfig.VERSION_NAME} (${com.opensky.virtuoso.BuildConfig.VERSION_CODE})")
+            appendLine("Teléfono: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+            appendLine("Ubicación: ${c.session.siteOrNull()?.location ?: "desconocida"}")
+            appendLine("Equipo: ${s.observingMode}; ocular ${s.eyepieceId}; Barlow ${s.barlowFactor}")
+            appendLine("Ejes invertidos: Az=${s.invertAzimuth} Alt=${s.invertAltitude}; límites de altura ${s.minAltitudeDeg}°…${s.maxAltitudeDeg}°; Sol ${s.sunAvoidanceDeg}°")
+            appendLine("Montura: ${m?.info?.modelName ?: "desconectada"} ${m?.info?.firmwareVersion ?: ""}; posición de inicio ${m?.startPosition ?: "—"}")
+            appendLine("Encoders: Az ${m?.encoderAzDeg} Alt ${m?.encoderAltDeg}; apunta a ${m?.pointing}")
+            appendLine("Alineación: modo ${a.mode}; ${a.alignmentSamples.size} estrellas + ${a.syncSamples.size} sync; RMS ${a.quality.rmsArcmin}′")
+            a.allSamples.forEach { appendLine("  · ${it.name}: cielo Az ${"%.2f".format(it.sky.azDeg)} Alt ${"%.2f".format(it.sky.altDeg)}; encoders Az ${"%.2f".format(Math.toDegrees(it.azEncoder))} Alt ${"%.2f".format(Math.toDegrees(it.altEncoder))}") }
+        }
+        runCatching { c.diagnostics.exportAndShare(header) }.onFailure { _message.value = "No se pudo exportar: ${it.message}" }
+    }
     fun deleteCatalog() = viewModelScope.launch { c.catalogs.delete() }
 
     /** Consulta de prueba: estrellas hasta V=9 a menos de 5° del cenit. */

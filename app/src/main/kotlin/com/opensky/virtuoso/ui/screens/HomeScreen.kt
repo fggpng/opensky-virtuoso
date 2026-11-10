@@ -62,6 +62,7 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
     val message by vm.message.collectAsStateWithLifecycle()
     val alignedSamples by vm.alignmentSamples.collectAsStateWithLifecycle()
     val checking by vm.checking.collectAsStateWithLifecycle()
+    val locationKnown by vm.locationKnown.collectAsStateWithLifecycle()
     MessageEffect(message, snackbar, vm::clearMessage)
 
     Column(
@@ -131,6 +132,7 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
         val m0 = mount
         if (m0 != null && m0.activity != Activity.DISCONNECTED && !session.connecting) {
             InfoCard("Posición de inicio") {
+                if (!locationKnown) WarningText("Sin ubicación todavía: el GoTo está bloqueado hasta tener GPS o coordenadas manuales.")
                 val unconfirmed = m0.startPosition == StartPosition.UNCONFIRMED && alignedSamples == 0
                 if (unconfirmed) WarningText("Sin confirmar: el GoTo está bloqueado hasta que la confirmes.")
                 else LabeledValue("Estado", if (alignedSamples > 0) "Alineada con estrellas" else m0.startPosition.label, monospace = false)

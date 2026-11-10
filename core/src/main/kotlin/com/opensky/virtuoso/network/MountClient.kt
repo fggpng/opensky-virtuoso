@@ -1,5 +1,6 @@
 package com.opensky.virtuoso.network
 
+import com.opensky.virtuoso.control.Diagnostics
 import com.opensky.virtuoso.network.protocol.Axis
 import com.opensky.virtuoso.network.protocol.AxisParameters
 import com.opensky.virtuoso.network.protocol.AxisStatus
@@ -67,12 +68,24 @@ class MountClient(
             val mountInfo = readInfo()
             send(SwCommand.INITIALIZE, Axis.BOTH)
             info = mountInfo
+            // Si una sesión anterior terminó mal (app cerrada a la fuerza, Wi-Fi caída) los motores
+            // pueden seguir girando con la última orden: se detienen antes de nada.
+            stopAll()
             _linkState.value = LinkState.CONNECTED
+            Diagnostics.log("CONEXIÓN ${transport.description}: firmware ${mountInfo.firmwareVersion}, modelo ${mountInfo.modelName}, " +
+                "pasos/vuelta Az=${mountInfo.azimuth.countsPerRevolution} Alt=${mountInfo.altitude.countsPerRevolution}, " +
+                "timer Az=${mountInfo.azimuth.timerFrequency} Alt=${mountInfo.altitude.timerFrequency}")
             return mountInfo
         } catch (e: Exception) {
             _linkState.value = LinkState.LOST
             throw e
         }
+    }
+
+    /** Reenvía la inicialización de motores (tras detectar que la montura se reinició). */
+    suspend fun initialize() {
+        send(SwCommand.INITIALIZE, Axis.BOTH)
+        rateCache.clear()
     }
 
     fun disconnect() {
@@ -98,10 +111,12 @@ class MountClient(
                 }
                 val raw = transport.exchange(request, config.timeoutMs)
                 val result = SkyWatcherCodec.parseResponse(raw, command, request)
+                Diagnostics.traffic("→ ${request.trim()} ← ${raw.trim()}")
                 _stats.value = _stats.value.copy(commands = _stats.value.commands + 1)
                 if (_linkState.value != LinkState.CONNECTING) _linkState.value = LinkState.CONNECTED
                 return@withLock result
             } catch (e: MountProtocolException) {
+                Diagnostics.log("ERROR de la montura a ${request.trim()}: ${e.message}")
                 throw e
             } catch (e: SocketTimeoutException) {
                 lastError = e
@@ -118,6 +133,7 @@ class MountClient(
             }
         }
         _linkState.value = LinkState.LOST
+        Diagnostics.log("SIN RESPUESTA a ${request.trim()} tras ${config.maxAttempts} intentos (${lastError?.javaClass?.simpleName}: ${lastError?.message})")
         throw MountTimeoutException(request.trim(), config.maxAttempts, lastError)
     }
 
@@ -154,8 +170,16 @@ class MountClient(
         send(if (instant) SwCommand.INSTANT_STOP else SwCommand.STOP, axis)
     }
 
-    suspend fun stopAll(instant: Boolean = false) {
-        Axis.MOTION_AXES.forEach { runCatching { stop(it, instant) } }
+    /**
+     * Detiene ambos ejes. Devuelve false si alguna orden de parada no fue confirmada por la
+     * montura (enlace caído): quien llama debe avisar al usuario, nunca suponer que se detuvo.
+     */
+    suspend fun stopAll(instant: Boolean = false): Boolean {
+        var ok = true
+        Axis.MOTION_AXES.forEach { axis ->
+            runCatching { stop(axis, instant) }.onFailure { ok = false }
+        }
+        return ok
     }
 
     suspend fun stopAndWait(axis: Axis, timeoutMs: Long = 20_000) {

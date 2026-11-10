@@ -35,11 +35,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 /**
  * Orquestador de la montura: convierte objetivos del cielo en movimientos de los ejes usando el
@@ -56,6 +62,8 @@ class MountController(
     private val clock: AstroClock,
     private val site: () -> Site,
     private val config: () -> ControllerConfig,
+    /** false mientras no haya ubicación real (GPS o manual): sin ella no se permite apuntar. */
+    private val siteKnown: () -> Boolean = { true },
 ) {
     private val _state = MutableStateFlow(MountState())
     val state: StateFlow<MountState> = _state.asStateFlow()
@@ -83,6 +91,27 @@ class MountController(
     @Volatile private var holdFeedback = false
     @Volatile private var lastFeedForward = 0.0 to 0.0
 
+    // ---- Controles de modos de falla (ver comentarios en cada uso)
+    /** Un solo GoTo a la vez: uno nuevo (app o Stellarium) cancela al anterior y espera a que pare. */
+    private val gotoMutex = Mutex()
+    /** Inicio del movimiento manual actual (hombre muerto). */
+    @Volatile private var manualStartedAtMs = 0L
+    /** Última lectura válida por eje (pasos, ms): detecta respuestas UDP tardías o cruzadas. */
+    private val lastAxisRead = ConcurrentHashMap<Axis, Pair<Int, Long>>()
+    /** Ambos encoders volvieron a 0 de golpe: la montura probablemente se reinició. */
+    private val resetSuspected = AtomicBoolean(false)
+    /** El firmware marca «inicializado» tras :F; si lo hace, se usa para detectar reinicios. */
+    @Volatile private var initFlagReliable = false
+    private var pollCount = 0L
+    @Volatile private var lastAxisSigns: Pair<Boolean, Boolean>? = null
+    /** Historial de (ms, pasos Az, pasos Alt, velocidad Az, velocidad Alt) para detectar atascos. */
+    private val motionHistory = ArrayDeque<MotionSample>()
+    private val repositionTimes = ArrayDeque<Long>()
+    /** Hasta cuándo el usuario aceptó trabajar cerca del Sol (confirmó tener filtro). */
+    @Volatile private var sunApprovedUntilMs = 0L
+
+    private data class MotionSample(val ms: Long, val az: Double, val alt: Double, val rAz: Double, val rAlt: Double)
+
     init {
         scope.launch {
             client.linkState.collect { link ->
@@ -99,10 +128,16 @@ class MountController(
 
     suspend fun connect(): MountInfo {
         val info = client.connect()
+        lastAxisRead.clear()
+        initFlagReliable = runCatching {
+            client.status(Axis.AZIMUTH).initialized && client.status(Axis.ALTITUDE).initialized
+        }.getOrDefault(false)
+        lastAxisSigns = config().let { it.invertAzimuth to it.invertAltitude }
         _state.update {
             it.copy(info = info, activity = Activity.IDLE, lastError = null,
                 message = "Conectado: ${info.modelName} (firmware ${info.firmwareVersion})")
         }
+        Diagnostics.log("Detección de reinicio por bandera de inicialización: ${if (initFlagReliable) "sí" else "no (solo por encoders en cero)"}")
         startPolling()
         return info
     }
@@ -122,6 +157,15 @@ class MountController(
                 try {
                     refreshPointing()
                     enforceManualLimits()
+                    checkManualDeadman()
+                    checkMotionStall()
+                    checkAxisConfigChange()
+                    if (resetSuspected.getAndSet(false)) handleMountReset("los dos encoders volvieron a cero")
+                    if (initFlagReliable && pollCount % 4 == 0L) {
+                        val ok = client.status(Axis.AZIMUTH).initialized && client.status(Axis.ALTITUDE).initialized
+                        if (!ok) handleMountReset("la tarjeta de motores perdió su inicialización")
+                    }
+                    pollCount++
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -146,8 +190,41 @@ class MountController(
 
     fun angleToSteps(axis: Axis, angle: Double): Int = (axisSign(axis) * angle * stepsPerRadian(axis)).roundToInt()
 
-    suspend fun readEncoders(): Pair<Double, Double> =
-        stepsToAngle(Axis.AZIMUTH, client.position(Axis.AZIMUTH)) to stepsToAngle(Axis.ALTITUDE, client.position(Axis.ALTITUDE))
+    suspend fun readEncoders(): Pair<Double, Double> {
+        val hadHistory = lastAxisRead[Axis.AZIMUTH]?.first?.let { abs(it) } to lastAxisRead[Axis.ALTITUDE]?.first?.let { abs(it) }
+        val azSteps = readAxisSteps(Axis.AZIMUTH)
+        val altSteps = readAxisSteps(Axis.ALTITUDE)
+        // Reinicio de la montura (p. ej. baterías bajas): los contadores vuelven exactamente a 0.
+        val oneDegAz = stepsPerRadian(Axis.AZIMUTH) * DEG
+        val oneDegAlt = stepsPerRadian(Axis.ALTITUDE) * DEG
+        if (azSteps == 0 && altSteps == 0 &&
+            ((hadHistory.first ?: 0) > oneDegAz || (hadHistory.second ?: 0) > oneDegAlt)
+        ) resetSuspected.set(true)
+        return stepsToAngle(Axis.AZIMUTH, azSteps) to stepsToAngle(Axis.ALTITUDE, altSteps)
+    }
+
+    /**
+     * Lee un eje y comprueba que el salto respecto a la lectura anterior sea físicamente posible.
+     * Por UDP, una respuesta tardía de otra petición (incluso del otro eje) tiene el mismo formato:
+     * si el salto es imposible se vuelve a leer y se usa la segunda lectura.
+     */
+    private suspend fun readAxisSteps(axis: Axis): Int {
+        val first = client.position(axis)
+        val now = System.currentTimeMillis()
+        val prev = lastAxisRead[axis]
+        var value = first
+        if (prev != null) {
+            val dt = (now - prev.second).coerceAtLeast(1) / 1000.0
+            val jumpDeg = abs(first - prev.first) / stepsPerRadian(axis) / DEG
+            if (jumpDeg > PLAUSIBLE_RATE_DEG_S * dt + PLAUSIBLE_MARGIN_DEG) {
+                value = client.position(axis)
+                Diagnostics.log("Lectura inverosímil del eje ${axis.label}: salto de %.2f° en %.2f s; relectura = %+.3f°".format(
+                    jumpDeg, dt, (value - prev.first) / stepsPerRadian(axis) / DEG))
+            }
+        }
+        lastAxisRead[axis] = value to System.currentTimeMillis()
+        return value
+    }
 
     /** Lee encoders y actualiza la posición del cielo (Alt/Az, AR/Dec de la fecha y J2000). */
     suspend fun refreshPointing(): MountState {
@@ -172,7 +249,9 @@ class MountController(
         stopAll()
         client.setPosition(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, Angles.normPi(azDeg * DEG)))
         client.setPosition(Axis.ALTITUDE, angleToSteps(Axis.ALTITUDE, altDeg * DEG))
+        lastAxisRead.clear()
         refreshPointing()
+        Diagnostics.log("POSICIÓN DE INICIO (${source.name}): Az %.2f°, Alt %.2f°".format(azDeg, altDeg))
         _state.update { it.copy(startPosition = source, message = "Orientación inicial: Az %.1f°, Alt %.1f°".format(azDeg, altDeg)) }
     }
 
@@ -220,6 +299,43 @@ class MountController(
         } else null
     }
 
+    /** Posición del Sol si está sobre el horizonte (de día); null de noche. */
+    private fun sunIfUp(now: AstroTime): HorizontalCoord? {
+        if (!siteKnown()) return null // sin ubicación real la posición del Sol no es fiable (y el GoTo ya está bloqueado)
+        val s = site()
+        val sun = TargetResolver.position(SolarSystemTarget(SolarSystemBody.SUN), now, s.location, s.weather).horizontal
+        return if (sun.altDeg < -2.0) null else sun
+    }
+
+    private fun sunApproved(): Boolean = System.currentTimeMillis() < sunApprovedUntilMs
+
+    /**
+     * Recorrido real de un GoTo: cada eje va a su máxima velocidad, así que primero se mueven los
+     * dos y luego solo el que tiene más camino. Devuelve la mínima distancia al Sol en ese
+     * recorrido (grados) si baja del límite; null si es seguro o de noche.
+     */
+    private fun sunOnPath(az0: Double, alt0: Double, azT: Double, altT: Double, now: AstroTime): Double? {
+        val sun = sunIfUp(now) ?: return null
+        val dAz = azT - az0; val dAlt = altT - alt0
+        val span = max(abs(dAz), abs(dAlt))
+        if (span <= 0.0) return null
+        var minSep = Double.MAX_VALUE
+        for (i in 0..PATH_SAMPLES) {
+            val s = span * i / PATH_SAMPLES
+            val az = az0 + sign(dAz) * min(s, abs(dAz))
+            val alt = alt0 + sign(dAlt) * min(s, abs(dAlt))
+            minSep = min(minSep, alignment.mountToSky(az, alt).separation(sun) / DEG)
+        }
+        return if (minSep < config().sunAvoidanceDeg) minSep else null
+    }
+
+    /** Elige el destino de acimut que no enrolla cables: camino corto salvo que pase de ±270°. */
+    private fun chooseAzTarget(az0: Double, encAz: Double): Double {
+        var t = az0 + Angles.normPi(encAz - az0)
+        if (abs(t) > AZ_WRAP_LIMIT) t -= sign(t) * 2 * Math.PI
+        return t
+    }
+
     private fun altitudeViolation(name: String, altDeg: Double): String? {
         val c = config()
         return when {
@@ -239,6 +355,7 @@ class MountController(
         target: Target, allowNearSun: Boolean = false, trackAfter: Boolean = true, rate: TrackingRate? = null,
     ): GotoResult {
         if (client.info == null) return GotoResult.Failed("Montura no conectada")
+        if (!siteKnown()) return GotoResult.Rejected(NO_LOCATION_MESSAGE)
         val s = site(); val cfg = config()
         val now0 = clock.now()
         val first = TargetResolver.position(target, now0, s.location, s.weather)
@@ -247,10 +364,20 @@ class MountController(
         if (_state.value.startPosition == StartPosition.UNCONFIRMED && alignment.state.value.allSamples.isEmpty()) {
             return GotoResult.Rejected(START_UNCONFIRMED_MESSAGE)
         }
+        // Un GoTo nuevo cancela el que esté en curso (por ejemplo uno pedido desde Stellarium) y
+        // espera a que termine: nunca dos GoTo mandando órdenes a la vez.
+        abortRequested.set(true)
+        return gotoMutex.withLock { gotoLocked(target, allowNearSun, trackAfter, rate, s, cfg) }
+    }
 
+    private suspend fun gotoLocked(
+        target: Target, allowNearSun: Boolean, trackAfter: Boolean, rate: TrackingRate?, s: Site, cfg: ControllerConfig,
+    ): GotoResult {
         abortRequested.set(false)
         stopTracking(stopMotors = false)
+        manualRates = 0.0 to 0.0
         centeringOffset = 0.0 to 0.0
+        if (allowNearSun) sunApprovedUntilMs = System.currentTimeMillis() + SUN_APPROVAL_MS
         _state.update { it.copy(activity = Activity.SLEWING, target = target, tracking = null, message = "GoTo → ${target.name}", lastError = null) }
         try {
             val passes = if (cfg.refineGoto) 2 else 1
@@ -264,7 +391,15 @@ class MountController(
                 val pos = TargetResolver.position(target, now.plusSeconds(lead), s.location, s.weather)
                 altitudeViolation(target.name, pos.horizontal.altDeg)?.let { return GotoResult.Rejected(it) }
                 val enc = alignment.skyToMount(pos.horizontal) ?: return GotoResult.Rejected("Posición inalcanzable")
-                val azTarget = az0 + Angles.normPi(enc.first - az0) // camino más corto, ángulo continuo
+                val azTarget = chooseAzTarget(az0, enc.first)
+                if (!allowNearSun && !sunApproved()) {
+                    sunOnPath(az0, alt0, azTarget, enc.second, now)?.let { sep ->
+                        _state.update { it.copy(activity = Activity.IDLE) }
+                        return GotoResult.Rejected("El recorrido del GoTo pasaría a %.0f° del Sol (mínimo %.0f°). Mueve primero el tubo con el pad para rodearlo.".format(sep, cfg.sunAvoidanceDeg))
+                    }
+                }
+                Diagnostics.log("GoTo ${target.name} (pasada $pass): cielo Az %.2f° Alt %.2f° → encoders Az %.2f° Alt %.2f° desde Az %.2f° Alt %.2f°".format(
+                    pos.horizontal.azDeg, pos.horizontal.altDeg, azTarget / DEG, enc.second / DEG, az0 / DEG, alt0 / DEG))
                 client.gotoSteps(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, azTarget))
                 client.gotoSteps(Axis.ALTITUDE, angleToSteps(Axis.ALTITUDE, enc.second))
                 if (!waitForGotoCompletion()) {
@@ -286,13 +421,26 @@ class MountController(
             throw e
         } catch (e: Exception) {
             runCatching { client.stopAll() }
-            _state.update { it.copy(activity = Activity.IDLE, lastError = e.message) }
+            Diagnostics.log("GoTo ${target.name} FALLÓ: ${e.message}")
+            _state.update {
+                it.copy(activity = Activity.IDLE, lastError = e.message,
+                    alert = if (e is StallException) e.message else it.alert)
+            }
             return GotoResult.Failed(e.message ?: e.toString())
         }
     }
 
+    /**
+     * Espera a que terminen ambos ejes. Además vigila que avancen: si un eje sigue «en marcha»
+     * pero no cambia de posición durante [ControllerConfig.stallWindowMs] (algo frena el tubo,
+     * embrague flojo, baterías bajas), detiene todo y lanza [StallException].
+     */
     private suspend fun waitForGotoCompletion(timeoutMs: Long = 240_000): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
+        val start = System.currentTimeMillis()
+        val deadline = start + timeoutMs
+        val window = config().stallWindowMs
+        var refMs = start
+        var refPos: Pair<Int, Int>? = null
         while (true) {
             if (abortRequested.get()) {
                 client.stopAll()
@@ -301,24 +449,59 @@ class MountController(
             val azRunning = client.status(Axis.AZIMUTH).running
             val altRunning = client.status(Axis.ALTITUDE).running
             if (!azRunning && !altRunning) return true
-            if (System.currentTimeMillis() > deadline) throw MountException("GoTo excedió el tiempo máximo")
+            val now = System.currentTimeMillis()
+            if (now > deadline) throw MountException("GoTo excedió el tiempo máximo")
+            val pos = client.position(Axis.AZIMUTH) to client.position(Axis.ALTITUDE)
+            val ref = refPos
+            if (ref == null || now - refMs >= window) {
+                if (ref != null && now - start > STALL_GRACE_MS) {
+                    val movedAz = abs(pos.first - ref.first) / stepsPerRadian(Axis.AZIMUTH) / DEG
+                    val movedAlt = abs(pos.second - ref.second) / stepsPerRadian(Axis.ALTITUDE) / DEG
+                    val stuck = (azRunning && movedAz < STALL_MIN_DEG) || (altRunning && movedAlt < STALL_MIN_DEG)
+                    if (stuck) {
+                        client.stopAll()
+                        throw StallException(stallMessage(if (azRunning && movedAz < STALL_MIN_DEG) Axis.AZIMUTH else Axis.ALTITUDE))
+                    }
+                }
+                refPos = pos; refMs = now
+            }
             delay(150)
         }
     }
+
+    private fun stallMessage(axis: Axis) =
+        "El motor de ${if (axis == Axis.AZIMUTH) "acimut" else "altura"} recibe órdenes pero el tubo no avanza. Se detuvo todo. " +
+            "Revisa que nada lo frene (cables, cámara, embrague flojo) y las baterías."
 
     fun defaultRateFor(target: Target): TrackingRate = when (target) {
         is SolarSystemTarget, is SmallBodyTarget -> TrackingRate.EPHEMERIS
         else -> TrackingRate.SIDEREAL
     }
 
-    /** Detiene todo (botón STOP): cancela GoTo, seguimiento y pad. */
-    suspend fun stopAll() {
+    /**
+     * Detiene todo (botón STOP): cancela GoTo, seguimiento y pad. Devuelve false si la montura no
+     * confirmó la parada ni al segundo intento: entonces se levanta una alarma para que el usuario
+     * apague la montura con su interruptor (nunca se da por hecho que se detuvo).
+     */
+    suspend fun stopAll(): Boolean {
         abortRequested.set(true)
         stopTracking(stopMotors = false)
         manualRates = 0.0 to 0.0
-        runCatching { client.stopAll() }
-        _state.update { it.copy(activity = if (client.info != null) Activity.IDLE else Activity.DISCONNECTED, tracking = null) }
+        var ok = client.stopAll()
+        if (!ok) {
+            delay(300)
+            ok = client.stopAll()
+        }
+        Diagnostics.log(if (ok) "DETENER: confirmado" else "DETENER: ¡NO CONFIRMADO por la montura!")
+        _state.update {
+            it.copy(activity = if (client.info != null) Activity.IDLE else Activity.DISCONNECTED, tracking = null,
+                alert = if (ok) it.alert else STOP_NOT_CONFIRMED_ALERT)
+        }
+        return ok
     }
+
+    /** El usuario leyó la alarma. */
+    fun clearAlert() = _state.update { it.copy(alert = null) }
 
     // ---------------------------------------------------------------- seguimiento
 
@@ -327,6 +510,7 @@ class MountController(
      * velocidad [rate] (sidérea, lunar o solar).
      */
     suspend fun startTracking(target: Target?, rate: TrackingRate = TrackingRate.SIDEREAL) {
+        if (!siteKnown()) throw MountException(NO_LOCATION_MESSAGE)
         val spec: TrackSpec = if (target == null || (rate == TrackingRate.LUNAR || rate == TrackingRate.SOLAR) && target !is SolarSystemTarget && target !is SmallBodyTarget) {
             val app = refreshPointing().pointingApparent ?: throw MountException("Sin posición actual")
             TrackSpec.Fixed(app, clock.now(), if (rate == TrackingRate.EPHEMERIS) TrackingRate.SIDEREAL else rate)
@@ -375,8 +559,11 @@ class MountController(
                 val now = clock.now()
                 val hz0 = skyPosition(spec, now)
                 if (hz0.altDeg < cfg.minAltitudeDeg) {
-                    client.stopAll()
-                    _state.update { it.copy(activity = Activity.IDLE, tracking = null, message = "El objetivo bajó del límite de altura: seguimiento detenido") }
+                    endTrackingFromLoop("El objetivo bajó del límite de altura: seguimiento detenido")
+                    return
+                }
+                if (hz0.altDeg > cfg.maxAltitudeDeg) {
+                    endTrackingFromLoop("El objetivo pasó la altura máxima (%.0f°): seguimiento detenido para no forzar el tubo cerca del cenit".format(cfg.maxAltitudeDeg))
                     return
                 }
                 val e0 = alignment.skyToMount(hz0)
@@ -396,8 +583,17 @@ class MountController(
                     }
                 }
                 if (!centering && !imaging && bigError) {
-                    // Desviación grande (p. ej. tras un sync o un golpe): reposiciona y sigue.
-                    client.gotoSteps(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, az + Angles.normPi(e1.first - az)))
+                    // Desviación grande (p. ej. tras un sync o un golpe): reposiciona y sigue, pero si
+                    // pasa una y otra vez algo frena el tubo: se detiene en lugar de insistir.
+                    val nowMs = System.currentTimeMillis()
+                    repositionTimes.addLast(nowMs)
+                    while (repositionTimes.isNotEmpty() && nowMs - repositionTimes.first() > 60_000) repositionTimes.removeFirst()
+                    if (repositionTimes.size > MAX_REPOSITIONS_PER_MINUTE) {
+                        endTrackingFromLoop(null, TRACKING_UNSTABLE_ALERT)
+                        return
+                    }
+                    Diagnostics.log("Seguimiento: desviación de %.2f°, reposicionando".format(max(abs(errAz) * cos(alt), abs(errAlt)) / DEG))
+                    client.gotoSteps(Axis.AZIMUTH, angleToSteps(Axis.AZIMUTH, chooseAzTarget(az, e1.first)))
                     client.gotoSteps(Axis.ALTITUDE, angleToSteps(Axis.ALTITUDE, e1.second))
                     waitForGotoCompletion()
                     continue
@@ -419,10 +615,31 @@ class MountController(
                 _state.update { if (it.lastError != null) it.copy(lastError = null) else it }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: StallException) {
+                endTrackingFromLoop(null, e.message)
+                return
             } catch (e: Exception) {
                 _state.update { it.copy(lastError = "Seguimiento: ${e.message}") }
             }
             delay(cfg.trackingUpdateMs)
+        }
+    }
+
+    /**
+     * El propio bucle de seguimiento termina (límite de altura, atasco…): para los motores y deja
+     * el estado limpio. Antes quedaba [trackSpec] puesto y el pad seguía sumando la última
+     * velocidad de seguimiento aunque ya nadie la actualizara.
+     */
+    private suspend fun endTrackingFromLoop(message: String?, alert: String? = null) {
+        trackSpec = null
+        lastTrackRates = 0.0 to 0.0
+        lastFeedForward = 0.0 to 0.0
+        holdFeedback = false
+        manualRates = 0.0 to 0.0
+        runCatching { client.stopAll() }
+        Diagnostics.log("Seguimiento terminado: ${message ?: alert}")
+        _state.update {
+            it.copy(activity = Activity.IDLE, tracking = null, message = message ?: it.message, alert = alert ?: it.alert)
         }
     }
 
@@ -454,6 +671,15 @@ class MountController(
             _state.update { it.copy(message = "Límite de altura mínima alcanzado") }
             return
         }
+        if (rates.second > 0 && (st.pointing?.altDeg ?: 0.0) >= config().maxAltitudeDeg) {
+            _state.update { it.copy(message = "Límite de altura máxima alcanzado") }
+            return
+        }
+        if (approachingSun(rates)) {
+            _state.update { it.copy(message = SUN_APPROACH_MESSAGE) }
+            return
+        }
+        manualStartedAtMs = System.currentTimeMillis()
         manualRates = rates
         if (trackSpec != null) {
             holdFeedback = true
@@ -466,6 +692,9 @@ class MountController(
     }
 
     suspend fun manualStop() {
+        // Sin movimiento manual en curso no hay nada que soltar (p. ej. un cliente de Stellarium que
+        // se desconecta): no se toca un GoTo o un seguimiento que estén en marcha.
+        if (manualRates == (0.0 to 0.0) && _state.value.activity != Activity.MANUAL) return
         val spec = trackSpec
         if (spec != null) {
             // 1) Deja de mover a mano pero sin corregir posición; 2) mide dónde quedó; 3) lo fija como
@@ -527,6 +756,110 @@ class MountController(
             if (trackSpec != null) applyRates() else client.stop(Axis.ALTITUDE)
             _state.update { it.copy(message = "Límite de altura mínima alcanzado") }
         }
+        if (manualRates.second > 0 && alt > config().maxAltitudeDeg) {
+            manualRates = manualRates.first to 0.0
+            if (trackSpec != null) applyRates() else client.stop(Axis.ALTITUDE)
+            _state.update { it.copy(message = "Límite de altura máxima alcanzado") }
+        }
+        if (manualRates != (0.0 to 0.0) && approachingSun(manualRates)) {
+            Diagnostics.log("Pad detenido: se acercaba al Sol")
+            manualStop()
+            _state.update { it.copy(message = SUN_APPROACH_MESSAGE) }
+        }
+    }
+
+    /**
+     * De día, ¿este movimiento manual acerca el tubo al Sol por debajo del límite? Se permite
+     * alejarse (para no dejar al usuario atrapado) y todo si confirmó usar filtro solar.
+     */
+    private fun approachingSun(rates: Pair<Double, Double>): Boolean {
+        if (sunApproved()) return false
+        val now = clock.now()
+        val sun = sunIfUp(now) ?: return false
+        val enc = _state.value.let { (it.encoderAzDeg ?: return false) * DEG to (it.encoderAltDeg ?: return false) * DEG }
+        val here = alignment.mountToSky(enc.first, enc.second).separation(sun) / DEG
+        val ahead = alignment.mountToSky(enc.first + rates.first * SUN_LOOKAHEAD_S, enc.second + rates.second * SUN_LOOKAHEAD_S).separation(sun) / DEG
+        return ahead < config().sunAvoidanceDeg && ahead < here
+    }
+
+    /** Hombre muerto: ningún movimiento manual sigue indefinidamente (pad atorado, cliente LX200 caído). */
+    private suspend fun checkManualDeadman() {
+        if (manualRates == (0.0 to 0.0)) return
+        val held = System.currentTimeMillis() - manualStartedAtMs
+        if (held > config().maxManualMs) {
+            Diagnostics.log("Hombre muerto: movimiento manual de ${held / 1000} s detenido")
+            manualStop()
+            _state.update { it.copy(message = "Movimiento manual detenido por seguridad tras %d s seguidos. Vuelve a pulsar si necesitas más.".format(config().maxManualMs / 1000)) }
+        }
+    }
+
+    /**
+     * Atasco durante pad o seguimiento rápido: se ordena mover a cierta velocidad pero el encoder
+     * no avanza. Compara lo esperado (velocidad × tiempo) con lo medido en una ventana.
+     */
+    private suspend fun checkMotionStall() {
+        val st = _state.value
+        val az = (st.encoderAzDeg ?: return) * DEG
+        val alt = (st.encoderAltDeg ?: return) * DEG
+        val now = System.currentTimeMillis()
+        val rAz = if (st.activity == Activity.MANUAL || st.activity == Activity.TRACKING) lastTrackRates.first + manualRates.first else 0.0
+        val rAlt = if (st.activity == Activity.MANUAL || st.activity == Activity.TRACKING) lastTrackRates.second + manualRates.second else 0.0
+        motionHistory.addLast(MotionSample(now, az, alt, rAz, rAlt))
+        val window = config().stallWindowMs
+        while (motionHistory.size > 2 && now - motionHistory.first().ms > window) motionHistory.removeFirst()
+        val first = motionHistory.first()
+        if (now - first.ms < window * 0.8) return
+        // Solo si la orden fue constante en signo durante toda la ventana.
+        fun steady(sel: (MotionSample) -> Double) = motionHistory.all { sel(it) != 0.0 && sign(sel(it)) == sign(sel(first)) }
+        fun expected(sel: (MotionSample) -> Double): Double {
+            var sum = 0.0
+            motionHistory.zipWithNext { a, b -> sum += abs(sel(a)) * (b.ms - a.ms) / 1000.0 }
+            return sum
+        }
+        val stalledAxis = when {
+            steady { it.rAz } && expected { it.rAz } > STALL_CHECK_MIN_EXPECTED_DEG * DEG &&
+                abs(Angles.normPi(az - first.az)) < 0.15 * expected { it.rAz } -> Axis.AZIMUTH
+            steady { it.rAlt } && expected { it.rAlt } > STALL_CHECK_MIN_EXPECTED_DEG * DEG &&
+                abs(alt - first.alt) < 0.15 * expected { it.rAlt } -> Axis.ALTITUDE
+            else -> null
+        } ?: return
+        motionHistory.clear()
+        Diagnostics.log("ATASCO detectado en ${stalledAxis.label} durante ${st.activity}")
+        stopAll()
+        _state.update { it.copy(alert = stallMessage(stalledAxis)) }
+    }
+
+    /**
+     * Cambiar «Invertir acimut/altura» con la montura conectada invierte de golpe la lectura de
+     * los encoders: la posición y la alineación dejan de valer. Se detiene todo y se pide
+     * confirmar de nuevo la posición de inicio.
+     */
+    private suspend fun checkAxisConfigChange() {
+        val signs = config().let { it.invertAzimuth to it.invertAltitude }
+        val previous = lastAxisSigns
+        lastAxisSigns = signs
+        if (previous == null || previous == signs) return
+        Diagnostics.log("Dirección de ejes cambiada en plena sesión: $previous → $signs")
+        stopAll()
+        alignment.reset()
+        lastAxisRead.clear()
+        _state.update { it.copy(startPosition = StartPosition.UNCONFIRMED, alert = AXIS_CHANGED_ALERT) }
+    }
+
+    /**
+     * La montura se reinició (baterías, cable): sus contadores volvieron a cero y la posición que
+     * creía la app ya no vale. Se detiene todo, se reinicializa y se exige confirmar el inicio.
+     */
+    private suspend fun handleMountReset(reason: String) {
+        Diagnostics.log("REINICIO DE LA MONTURA detectado: $reason")
+        stopAll()
+        runCatching { client.initialize() }
+        alignment.reset()
+        lastAxisRead.clear()
+        _state.update {
+            it.copy(startPosition = StartPosition.UNCONFIRMED, activity = Activity.IDLE, target = null, tracking = null,
+                alert = MOUNT_RESET_ALERT)
+        }
     }
 
     // ---------------------------------------------------------------- sincronización
@@ -536,15 +869,52 @@ class MountController(
      * @param asAlignmentStar true para estrellas del proceso de alineación; false para "Sync Samples".
      */
     suspend fun sync(target: Target, asAlignmentStar: Boolean): AlignmentState {
+        if (!siteKnown()) throw MountException(NO_LOCATION_MESSAGE)
+        if (_state.value.activity == Activity.SLEWING) throw MountException("Espera a que termine el GoTo antes de confirmar la estrella")
         val (az, alt) = readEncoders()
         val now = clock.now(); val s = site()
         val pos = TargetResolver.position(target, now, s.location, s.weather)
         val sample = AlignmentSample(target.name, pos.horizontal, az, alt)
+        val dev = deviationDeg(pos.horizontal, az, alt)
+        Diagnostics.log("SYNC ${target.name} (${if (asAlignmentStar) "alineación" else "sync"}): cielo Az %.2f° Alt %.2f°, encoders Az %.2f° Alt %.2f°, desvío respecto al modelo %s".format(
+            pos.horizontal.azDeg, pos.horizontal.altDeg, az / DEG, alt / DEG, dev?.let { "%.2f°".format(it) } ?: "—"))
         val result = if (asAlignmentStar) alignment.addAlignmentStar(sample) else alignment.addSyncSample(sample)
         centeringOffset = 0.0 to 0.0
         refreshPointing()
         _state.update { it.copy(message = "Sincronizado con ${target.name}") }
         return result
+    }
+
+    /**
+     * ¿Cuánto difiere la posición actual del tubo de donde el modelo esperaba encontrar [target]?
+     * Sirve para avisar ANTES de confirmar una estrella equivocada (el error humano más común).
+     */
+    suspend fun syncDeviationDeg(target: Target): Double? {
+        val (az, alt) = readEncoders()
+        val s = site()
+        val pos = TargetResolver.position(target, clock.now(), s.location, s.weather)
+        return deviationDeg(pos.horizontal, az, alt)
+    }
+
+    private fun deviationDeg(sky: HorizontalCoord, az: Double, alt: Double): Double? {
+        val expected = alignment.skyToMount(sky) ?: return null
+        return hypot(Angles.normPi(az - expected.first) * cos(alt), alt - expected.second) / DEG
+    }
+
+    /**
+     * Desvío máximo razonable para confirmar una estrella, según lo que ya sabe la app: con 2 o más
+     * estrellas el modelo es bueno (3°); con 1, aún no conoce la inclinación de la base (8°); sin
+     * estrellas pero con posición de inicio confirmada, lo que da apuntar a ojo hacia el norte (20°).
+     * null si no hay referencia para comparar.
+     */
+    fun syncDeviationLimitDeg(): Double? {
+        val n = alignment.state.value.allSamples.size
+        return when {
+            n >= 2 -> 3.0
+            n == 1 -> 8.0
+            _state.value.startPosition != StartPosition.UNCONFIRMED -> 20.0
+            else -> null
+        }
     }
 
     /** GoTo a coordenadas J2000 externas (Stellarium). Nunca permite el entorno del Sol. */
@@ -560,6 +930,36 @@ class MountController(
     companion object {
         /** Ganancia proporcional del seguimiento (1/s): corrige la mitad del error por segundo. */
         const val TRACK_GAIN = 0.5
+        const val NO_LOCATION_MESSAGE =
+            "Todavía no hay ubicación (GPS o coordenadas manuales). Sin ella la app calcularía las posiciones para otro " +
+                "lugar del planeta: espera el GPS o escribe tus coordenadas en Ajustes."
+        const val MOUNT_RESET_ALERT =
+            "La montura se reinició (¿baterías bajas o cable flojo?) y perdió su posición. Se detuvo todo y se borró la " +
+                "alineación. Revisa la alimentación, confirma de nuevo la posición de inicio y vuelve a alinear."
+        const val STOP_NOT_CONFIRMED_ALERT =
+            "¡La montura no confirmó la orden de DETENER! Puede seguir moviéndose. Apágala con su interruptor y revisa la conexión Wi-Fi."
+        const val AXIS_CHANGED_ALERT =
+            "Cambiaste la dirección de un eje con la montura conectada: la posición y la alineación anteriores ya no valen. " +
+                "Confirma de nuevo la posición de inicio y vuelve a alinear."
+        const val TRACKING_UNSTABLE_ALERT =
+            "El seguimiento tuvo que reposicionar el tubo varias veces en un minuto: algo lo frena o la alineación es mala. " +
+                "Se detuvo. Revisa cables, cámara y embrague, y repite la alineación si hace falta."
+        const val SUN_APPROACH_MESSAGE =
+            "Movimiento detenido: el tubo se acercaba al Sol. Aléjalo en otra dirección o haz GoTo al Sol confirmando que tienes filtro."
+        /** Velocidad física máxima creíble de un eje (°/s) y margen para lecturas plausibles. */
+        const val PLAUSIBLE_RATE_DEG_S = 8.0
+        const val PLAUSIBLE_MARGIN_DEG = 1.0
+        /** Un eje «en marcha» que avanza menos que esto en la ventana de vigilancia está atascado. */
+        const val STALL_MIN_DEG = 0.02
+        const val STALL_GRACE_MS = 1_500L
+        const val STALL_CHECK_MIN_EXPECTED_DEG = 0.3
+        const val MAX_REPOSITIONS_PER_MINUTE = 3
+        /** Límite de vueltas en acimut desde la posición de inicio (protege cables). */
+        val AZ_WRAP_LIMIT = Math.toRadians(270.0)
+        const val PATH_SAMPLES = 40
+        const val SUN_LOOKAHEAD_S = 2.0
+        /** Tras confirmar el aviso del Sol (filtro puesto) se permite trabajar cerca de él este tiempo. */
+        const val SUN_APPROVAL_MS = 3 * 3600_000L
         /** Diferencia máxima aceptada entre la altura creída y la medida por el teléfono. */
         const val ALTITUDE_CHECK_TOLERANCE_DEG = 5.0
         const val START_UNCONFIRMED_MESSAGE =
@@ -571,3 +971,6 @@ class MountController(
         const val IMAGING_MAX_CORRECTION = 0.5 * MountClient.SIDEREAL_RATE_RAD_S
     }
 }
+
+/** Un eje recibe órdenes de movimiento pero no avanza (obstáculo, embrague, baterías). */
+class StallException(message: String) : MountException(message)
