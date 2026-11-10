@@ -48,6 +48,8 @@ class MountSimulator(
         var absoluteTarget: Int? = null
         var target = 0.0
         var initialized = false
+        /** Falla simulada: el motor recibe la orden pero el eje no avanza (obstáculo, baterías). */
+        @Volatile var stalled = false
         private var lastNanos = System.nanoTime()
 
         @Synchronized
@@ -55,7 +57,7 @@ class MountSimulator(
             val now = System.nanoTime()
             val dt = (now - lastNanos) * 1e-9
             lastNanos = now
-            if (!running || dt <= 0) return
+            if (!running || dt <= 0 || stalled) return
             if (gotoMode) {
                 val degPerSec = if (fast) gotoFastDegPerSec else gotoSlowDegPerSec
                 val stepsPerSec = degPerSec * countsPerRevolution / 360.0
@@ -89,6 +91,17 @@ class MountSimulator(
         thread.start()
         return this
     }
+
+    /** Falla simulada: bloquea (o libera) un eje ('1' acimut, '2' altura). */
+    fun setStalled(axis: Char, stalled: Boolean) { axes.getValue(axis).stalled = stalled }
+
+    /** Falla simulada: la montura se reinicia (p. ej. baterías bajas): contadores a 0 y sin inicializar. */
+    fun simulateReboot() {
+        axes.values.forEach { it.advance(); it.running = false; it.position = 0.0; it.initialized = false }
+    }
+
+    /** ¿Está girando el eje? (para aserciones en pruebas). */
+    fun isRunning(axis: Char): Boolean = axes.getValue(axis).also { it.advance() }.running
 
     /** Posición actual de un eje en pasos (para aserciones en pruebas). */
     fun positionOf(axis: Char): Double = axes.getValue(axis).also { it.advance() }.position

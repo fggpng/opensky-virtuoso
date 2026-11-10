@@ -107,6 +107,10 @@ class Lx200Session(
     private var targetDecDeg: Double? = null
     private var rateIndex = 5 // 64x por defecto ("find")
 
+    /** true si este cliente dejó un movimiento manual en marcha (se detiene si se desconecta). */
+    @Volatile var hasActiveMove = false
+        private set
+
     private fun current(): EquatorialCoord? = bridge.positionJ2000()?.let { bridge.toEpoch(it, epoch) }
 
     /** @return respuesta a enviar (puede ser vacía) o null si el comando no lleva respuesta. */
@@ -124,11 +128,14 @@ class Lx200Session(
             body.startsWith("Sd") -> Lx200Format.parseDec(body.substring(2))?.let { targetDecDeg = it; "1" } ?: "0"
             body == "MS" -> slew()
             body == "CM" || body == "CMR" -> sync()
-            body == "Q" -> { scope.launch { bridge.stop() }; null }
-            body in setOf("Qn", "Qs", "Qe", "Qw") -> { scope.launch { bridge.stopMove() }; null }
+            // Mover y parar se ejecutan EN ORDEN (sin lanzarlos en paralelo): si «parar» llegara a
+            // procesarse antes que «mover», el telescopio seguiría girando.
+            body == "Q" -> { hasActiveMove = false; bridge.stop(); null }
+            body in setOf("Qn", "Qs", "Qe", "Qw") -> { hasActiveMove = false; bridge.stopMove(); null }
             body in setOf("Mn", "Ms", "Me", "Mw") -> {
                 val dir = when (body) { "Mn" -> PadDirection.UP; "Ms" -> PadDirection.DOWN; "Me" -> PadDirection.LEFT; else -> PadDirection.RIGHT }
-                scope.launch { bridge.move(dir, rateIndex) }; null
+                hasActiveMove = true
+                bridge.move(dir, rateIndex); null
             }
             body == "RG" -> { rateIndex = 0; null }
             body == "RC" -> { rateIndex = 2; null }

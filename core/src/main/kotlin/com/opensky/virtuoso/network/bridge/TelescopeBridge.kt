@@ -70,7 +70,7 @@ class MountControllerBridge(
     override suspend fun syncJ2000(j2000: EquatorialCoord): String? =
         runCatching { controller.syncJ2000(j2000) }.exceptionOrNull()?.message
 
-    override suspend fun stop() = controller.stopAll()
+    override suspend fun stop() { controller.stopAll() }
     override suspend fun move(direction: PadDirection, rateIndex: Int) = controller.manualStart(direction, rateIndex, PadMode.RA_DEC)
     override suspend fun stopMove() = controller.manualStop()
 }

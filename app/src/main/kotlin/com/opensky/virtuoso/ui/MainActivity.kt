@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -19,6 +20,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -121,6 +123,18 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
     }.toTypedArray()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { homeVm.onPermissionsResult() }
     LaunchedEffect(Unit) { launcher.launch(permissions) }
+
+    // Alarmas de seguridad de la montura (reinicio, atasco, parada no confirmada…): se muestran
+    // encima de cualquier pantalla hasta que el usuario las lee.
+    val mountState by homeVm.mount.collectAsStateWithLifecycle()
+    mountState?.alert?.let { alert ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("⚠ Atención") },
+            text = { Text(alert) },
+            confirmButton = { TextButton(onClick = { homeVm.clearAlert() }) { Text("Entendido") } },
+        )
+    }
 
     // Al abrir la app, comprueba en silencio si hay una versión nueva en GitHub y lo avisa.
     val updateVm: UpdateViewModel = viewModel(factory = factory)

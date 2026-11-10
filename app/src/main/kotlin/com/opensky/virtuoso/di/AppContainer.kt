@@ -29,6 +29,10 @@ class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** Registro de diagnóstico: todo lo que escribe el núcleo (Diagnostics) va a este archivo. */
+    val diagnostics = com.opensky.virtuoso.data.DiagnosticLogger(context.applicationContext).also { logger ->
+        com.opensky.virtuoso.control.Diagnostics.sink = logger::log
+    }
     val settings = SettingsRepository(context, appScope)
     val clock = OffsetAstroClock()
     val wifi = SynScanWifiManager(context)

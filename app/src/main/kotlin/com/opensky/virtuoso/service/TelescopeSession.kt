@@ -78,6 +78,9 @@ class TelescopeSession(
         return Site(loc, Weather(s.pressureHpa, s.temperatureC))
     }
 
+    /** Hay una ubicación real (GPS o manual distinta de 0°, 0°): requisito para apuntar. */
+    fun siteKnown(): Boolean = siteOrNull()?.location?.let { !(it.latitudeDeg == 0.0 && it.longitudeDeg == 0.0) } ?: false
+
     fun site(): Site = siteOrNull() ?: settings.current.let {
         Site(GeoLocation(it.manualLatitude, it.manualLongitude, it.manualElevationM), Weather(it.pressureHpa, it.temperatureC))
     }
@@ -85,6 +88,8 @@ class TelescopeSession(
     suspend fun connect(mode: ConnectionMode): Result<MountInfo> {
         disconnect()
         val s = settings.current
+        com.opensky.virtuoso.control.Diagnostics.log("SESIÓN: conectando (${mode.label}); ubicación ${siteOrNull()?.location ?: "DESCONOCIDA"}; " +
+            "equipo ${s.observingMode}; invertir Az=${s.invertAzimuth} Alt=${s.invertAltitude}; límites ${s.minAltitudeDeg}°…${s.maxAltitudeDeg}°")
         _state.value = SessionState(connecting = true, mode = mode, step = "Preparando enlace…")
         return try {
             val t: MountTransport = when (mode) {
@@ -114,7 +119,7 @@ class TelescopeSession(
             transport = t
             _state.value = _state.value.copy(step = "Hablando con la montura (${t.description})…")
             val client = MountClient(t)
-            val controller = MountController(client, alignment, scope, clock, ::site) { settings.current.controllerConfig() }
+            val controller = MountController(client, alignment, scope, clock, ::site, { settings.current.controllerConfig() }, ::siteKnown)
             alignment.referenceFieldRadiusArcmin = s.opticalSetup().referenceRadiusArcmin
             val info = controller.connect()
             _controller.value = controller
@@ -123,6 +128,7 @@ class TelescopeSession(
             _state.value = SessionState(connecting = false, mode = mode)
             Result.success(info)
         } catch (e: Exception) {
+            com.opensky.virtuoso.control.Diagnostics.log("SESIÓN: falló la conexión: ${e.message}")
             cleanup()
             _state.value = SessionState(connecting = false, mode = mode, error = e.message ?: e.toString())
             Result.failure(e)
@@ -183,6 +189,7 @@ class TelescopeSession(
     }
 
     suspend fun disconnect() {
+        if (_controller.value != null) com.opensky.virtuoso.control.Diagnostics.log("SESIÓN: desconectada por el usuario")
         _controller.value?.let { runCatching { it.disconnect() } }
         _controller.value = null
         cleanup()

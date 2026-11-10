@@ -52,6 +52,10 @@ data class ControllerConfig(
     val refineGoto: Boolean = true,
     /** VISUAL (ocular) o IMAGING (cámara): ver [TrackingMode]. */
     val trackingMode: TrackingMode = TrackingMode.VISUAL,
+    /** Hombre muerto: un movimiento manual continuo se detiene solo pasado este tiempo. */
+    val maxManualMs: Long = 30_000,
+    /** Ventana para detectar un motor que recibe órdenes pero no avanza (atasco, baterías). */
+    val stallWindowMs: Long = 2_500,
 )
 
 /**
@@ -86,6 +90,8 @@ data class MountState(
     val tracking: TrackingRate? = null,
     val message: String? = null,
     val lastError: String? = null,
+    /** Alarma que el usuario debe leer y descartar (montura reiniciada, motor atascado, parada no confirmada…). */
+    val alert: String? = null,
 )
 
 sealed class GotoResult {

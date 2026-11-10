@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +48,19 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
     val settings by vm.settings.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val padMessage by pad.message.collectAsStateWithLifecycle()
+    val doubtful by vm.doubtful.collectAsStateWithLifecycle()
+    doubtful?.let { d ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissDoubtful() },
+            title = { Text("¿Seguro que es ${d.star.name}?") },
+            text = {
+                Text("El tubo está a %.0f° de donde debería estar %s (lo normal en este paso es menos de %.0f°). ".format(d.deviationDeg, d.star.name, d.limitDeg) +
+                    "Confirmar una estrella equivocada estropea toda la alineación. Revisa con el buscador o con una app de mapa del cielo.")
+            },
+            confirmButton = { TextButton(onClick = { vm.confirmCentered(force = true) }) { Text("Sí, es ${d.star.name}") } },
+            dismissButton = { TextButton(onClick = { vm.dismissDoubtful() }) { Text("No, voy a revisar") } },
+        )
+    }
     MessageEffect(message, snackbar, vm::clearMessage)
     MessageEffect(padMessage, snackbar, pad::clearMessage)
 

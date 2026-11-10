@@ -9,6 +9,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,6 +23,8 @@ import java.io.DataInputStream
 import java.io.EOFException
 import java.io.IOException
 import java.io.OutputStream
+import java.net.Inet6Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -60,6 +64,13 @@ abstract class TcpBridgeServer(val name: String, private val port: Int, protecte
         acceptJob = scope.launch(Dispatchers.IO) {
             while (currentCoroutineContext().isActive) {
                 val socket = try { ss.accept() } catch (_: SocketException) { break }
+                if (!isLocalPeer(socket.inetAddress)) {
+                    // Con datos móviles el teléfono puede tener una IPv6 pública: nadie de Internet
+                    // debe poder mover el telescopio. Solo se aceptan redes locales.
+                    _lastError.value = "Conexión rechazada desde ${socket.inetAddress?.hostAddress} (no es una red local)"
+                    runCatching { socket.close() }
+                    continue
+                }
                 launch(Dispatchers.IO) { handle(socket) }
             }
             _running.value = false
@@ -90,6 +101,18 @@ abstract class TcpBridgeServer(val name: String, private val port: Int, protecte
     }
 
     protected abstract suspend fun serve(socket: Socket)
+
+    companion object {
+        /**
+         * Solo clientes de la propia red: el mismo teléfono (loopback), la Wi-Fi de la montura o de
+         * casa (192.168.x, 10.x, 172.16–31.x), enlace local (169.254.x, fe80::) e IPv6 ULA (fc00::/7).
+         */
+        fun isLocalPeer(address: InetAddress?): Boolean {
+            if (address == null) return false
+            if (address.isLoopbackAddress || address.isSiteLocalAddress || address.isLinkLocalAddress) return true
+            return address is Inet6Address && (address.address[0].toInt() and 0xFE) == 0xFC
+        }
+    }
 }
 
 /**
@@ -110,15 +133,20 @@ class Lx200TcpServer(
         val input = socket.getInputStream()
         val output = socket.getOutputStream()
         val buf = ByteArray(256)
-        while (currentCoroutineContext().isActive) {
-            val n = input.read(buf)
-            if (n < 0) break
-            for (cmd in tokenizer.feed(String(buf, 0, n, StandardCharsets.ISO_8859_1))) {
-                session.process(cmd)?.let { reply ->
-                    output.write(reply.toByteArray(StandardCharsets.ISO_8859_1))
-                    output.flush()
+        try {
+            while (currentCoroutineContext().isActive) {
+                val n = input.read(buf)
+                if (n < 0) break
+                for (cmd in tokenizer.feed(String(buf, 0, n, StandardCharsets.ISO_8859_1))) {
+                    session.process(cmd)?.let { reply ->
+                        output.write(reply.toByteArray(StandardCharsets.ISO_8859_1))
+                        output.flush()
+                    }
                 }
             }
+        } finally {
+            // El cliente se fue (Wi-Fi caída, app cerrada) con un movimiento en marcha: se detiene.
+            if (session.hasActiveMove) withContext(NonCancellable) { runCatching { bridge.stopMove() } }
         }
     }
 }
