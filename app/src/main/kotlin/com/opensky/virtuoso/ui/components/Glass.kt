@@ -345,6 +345,8 @@ fun AmbientBackdrop(night: Boolean, modifier: Modifier = Modifier) {
         modifier.fillMaxSize().graphicsLayer().drawWithCache {
             val w = size.width
             val h = size.height
+            // Sin tamaño todavía (los degradados de Android no admiten radio 0): no se dibuja nada.
+            if (w < 1f || h < 1f) return@drawWithCache onDrawBehind { }
             val top = if (night) Color(0xFF070000) else Color(0xFF050811)
             val bottom = if (night) Color(0xFF0C0000) else Color(0xFF0A1020)
             val orbs = if (night) listOf(
