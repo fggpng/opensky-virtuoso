@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.opensky.virtuoso.alignment.AlignmentMode
+import com.opensky.virtuoso.control.MountState
 import com.opensky.virtuoso.control.StartPosition
 import com.opensky.virtuoso.ui.components.GlassAlertDialog
 import com.opensky.virtuoso.ui.components.GroupedSection
@@ -46,6 +48,16 @@ import com.opensky.virtuoso.ui.components.screenPadding
 import com.opensky.virtuoso.ui.components.uiPalette
 import com.opensky.virtuoso.ui.viewmodel.AlignmentViewModel
 import com.opensky.virtuoso.ui.viewmodel.ControlViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+
+private enum class LinkStatus { DISCONNECTED, START_UNCONFIRMED, READY }
+
+private fun linkStatus(m: MountState?): LinkStatus = when {
+    m == null -> LinkStatus.DISCONNECTED
+    m.startPosition == StartPosition.UNCONFIRMED -> LinkStatus.START_UNCONFIRMED
+    else -> LinkStatus.READY
+}
 
 /**
  * Alineación (estilo lista agrupada de iOS). Solo cambia la presentación: los estados que se leen
@@ -58,7 +70,10 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
     val current by vm.current.collectAsStateWithLifecycle()
     val identified by vm.identified.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    val mount by vm.mount.collectAsStateWithLifecycle()
+    // De la montura aquí solo importa si está conectada y si la posición de inicio está confirmada.
+    // Observar solo eso evita recomponer la pantalla con cada lectura de posición (cada 500 ms).
+    val link by remember(vm) { vm.mount.map { linkStatus(it) }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(initialValue = linkStatus(vm.mount.value))
     val settings by vm.settings.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val padMessage by pad.message.collectAsStateWithLifecycle()
@@ -85,9 +100,9 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Estado: píldoras en vez de texto suelto.
-        if (mount == null) {
+        if (link == LinkStatus.DISCONNECTED) {
             StatusPill("Conecta la montura en Inicio antes de alinear.", tone = StatusTone.Danger, icon = OpenSkyIcons.Plug)
-        } else if (mount?.startPosition == StartPosition.UNCONFIRMED && state.allSamples.isEmpty()) {
+        } else if (link == LinkStatus.START_UNCONFIRMED && state.allSamples.isEmpty()) {
             StatusPill(
                 "Confirma primero la posición de inicio en Inicio (tubo horizontal hacia el norte). Sin eso los GoTo están bloqueados.",
                 tone = StatusTone.Caution,
