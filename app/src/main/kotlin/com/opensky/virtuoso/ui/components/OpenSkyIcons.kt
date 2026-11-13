@@ -16,56 +16,110 @@ object OpenSkyIcons {
     private fun icon(name: String, block: ImageVector.Builder.() -> Unit): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply(block).build()
 
-    val Home: ImageVector by lazy {
-        icon("Home") {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(12f, 3f); lineTo(2f, 12f); horizontalLineTo(5f); verticalLineTo(20f)
-                horizontalLineTo(10f); verticalLineTo(14f); horizontalLineTo(14f); verticalLineTo(20f)
-                horizontalLineTo(19f); verticalLineTo(12f); horizontalLineTo(22f); close()
-            }
+    /*
+     * Iconos de la barra y de la pantalla principal: familia «outline» con el mismo trazo (1.75 dp a
+     * 24 dp), puntas y uniones redondeadas. Así todos pesan lo mismo visualmente.
+     */
+    private const val STROKE = 1.75f
+
+    private fun outline(name: String, block: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector = icon(name) {
+        path(
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = STROKE,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+            pathBuilder = block,
+        )
+    }
+
+    /** Punto relleno (para «i», «?» o la antena de la Wi-Fi) dentro de un icono outline. */
+    private fun ImageVector.Builder.dot(cx: Float, cy: Float, r: Float) {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(cx + r, cy)
+            arcTo(r, r, 0f, true, true, cx - r, cy)
+            arcTo(r, r, 0f, true, true, cx + r, cy)
+            close()
         }
     }
 
+    val Home: ImageVector by lazy {
+        outline("Home") {
+            moveTo(3.5f, 11f); lineTo(12f, 4f); lineTo(20.5f, 11f)
+            moveTo(6f, 9.5f); verticalLineTo(20f); horizontalLineTo(10f); verticalLineTo(14.5f)
+            horizontalLineTo(14f); verticalLineTo(20f); horizontalLineTo(18f); verticalLineTo(9.5f)
+        }
+    }
+
+    /** Retícula de alineación: círculo con cuatro marcas. */
     val Target: ImageVector by lazy {
-        icon("Target") {
-            path(fill = SolidColor(Color.White)) {
-                // retícula: cuatro trazos y un punto central
-                moveTo(11f, 2f); horizontalLineTo(13f); verticalLineTo(8f); horizontalLineTo(11f); close()
-                moveTo(11f, 16f); horizontalLineTo(13f); verticalLineTo(22f); horizontalLineTo(11f); close()
-                moveTo(2f, 11f); horizontalLineTo(8f); verticalLineTo(13f); horizontalLineTo(2f); close()
-                moveTo(16f, 11f); horizontalLineTo(22f); verticalLineTo(13f); horizontalLineTo(16f); close()
-                moveTo(10.5f, 10.5f); horizontalLineTo(13.5f); verticalLineTo(13.5f); horizontalLineTo(10.5f); close()
-            }
+        outline("Target") {
+            moveTo(19f, 12f); arcTo(7f, 7f, 0f, true, true, 5f, 12f); arcTo(7f, 7f, 0f, true, true, 19f, 12f)
+            moveTo(12f, 2.5f); verticalLineTo(7f)
+            moveTo(12f, 17f); verticalLineTo(21.5f)
+            moveTo(2.5f, 12f); horizontalLineTo(7f)
+            moveTo(17f, 12f); horizontalLineTo(21.5f)
         }
     }
 
     val Star: ImageVector by lazy {
-        icon("Star") {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(12f, 2f); lineTo(14.9f, 8.6f); lineTo(22f, 9.3f); lineTo(16.6f, 14f); lineTo(18.2f, 21f)
-                lineTo(12f, 17.3f); lineTo(5.8f, 21f); lineTo(7.4f, 14f); lineTo(2f, 9.3f); lineTo(9.1f, 8.6f); close()
-            }
+        outline("Star") {
+            moveTo(12f, 3f); lineTo(14.6f, 8.9f); lineTo(21f, 9.5f); lineTo(16.2f, 13.8f); lineTo(17.6f, 20.1f)
+            lineTo(12f, 16.8f); lineTo(6.4f, 20.1f); lineTo(7.8f, 13.8f); lineTo(3f, 9.5f); lineTo(9.4f, 8.9f); close()
         }
     }
 
+    /** Cruceta del mando. */
     val Pad: ImageVector by lazy {
-        icon("Pad") {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(12f, 2f); lineTo(16f, 7f); horizontalLineTo(8f); close()
-                moveTo(12f, 22f); lineTo(8f, 17f); horizontalLineTo(16f); close()
-                moveTo(2f, 12f); lineTo(7f, 8f); verticalLineTo(16f); close()
-                moveTo(22f, 12f); lineTo(17f, 16f); verticalLineTo(8f); close()
-            }
+        outline("Pad") {
+            moveTo(9.5f, 3.5f); horizontalLineTo(14.5f); verticalLineTo(9.5f); horizontalLineTo(20.5f); verticalLineTo(14.5f)
+            horizontalLineTo(14.5f); verticalLineTo(20.5f); horizontalLineTo(9.5f); verticalLineTo(14.5f); horizontalLineTo(3.5f)
+            verticalLineTo(9.5f); horizontalLineTo(9.5f); close()
         }
     }
 
     val More: ImageVector by lazy {
-        icon("More") {
-            path(fill = SolidColor(Color.White)) {
-                moveTo(4f, 10f); horizontalLineTo(8f); verticalLineTo(14f); horizontalLineTo(4f); close()
-                moveTo(10f, 10f); horizontalLineTo(14f); verticalLineTo(14f); horizontalLineTo(10f); close()
-                moveTo(16f, 10f); horizontalLineTo(20f); verticalLineTo(14f); horizontalLineTo(16f); close()
+        outline("More") {
+            for (x in listOf(5f, 12f, 19f)) {
+                moveTo(x + 1.6f, 12f); arcTo(1.6f, 1.6f, 0f, true, true, x - 1.6f, 12f); arcTo(1.6f, 1.6f, 0f, true, true, x + 1.6f, 12f)
             }
+        }
+    }
+
+    /** Wi-Fi: tres arcos y la antena. */
+    val Wifi: ImageVector by lazy {
+        icon("Wifi") {
+            path(stroke = SolidColor(Color.White), strokeLineWidth = STROKE, strokeLineCap = StrokeCap.Round) {
+                moveTo(2.5f, 9f); quadTo(12f, 1f, 21.5f, 9f)
+                moveTo(5.5f, 12.5f); quadTo(12f, 7f, 18.5f, 12.5f)
+                moveTo(8.5f, 16f); quadTo(12f, 13f, 15.5f, 16f)
+            }
+            dot(12f, 19.5f, 1.4f)
+        }
+    }
+
+    /** Pin de ubicación. */
+    val Pin: ImageVector by lazy {
+        outline("Pin") {
+            moveTo(12f, 21.5f)
+            curveTo(8f, 17f, 5.5f, 13.5f, 5.5f, 9.5f)
+            arcTo(6.5f, 6.5f, 0f, false, true, 18.5f, 9.5f)
+            curveTo(18.5f, 13.5f, 16f, 17f, 12f, 21.5f)
+            close()
+            moveTo(14.5f, 9.5f); arcTo(2.5f, 2.5f, 0f, true, true, 9.5f, 9.5f); arcTo(2.5f, 2.5f, 0f, true, true, 14.5f, 9.5f)
+        }
+    }
+
+    /** Ayuda: círculo con «?». */
+    val Help: ImageVector by lazy {
+        icon("Help") {
+            path(stroke = SolidColor(Color.White), strokeLineWidth = STROKE, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round) {
+                moveTo(21f, 12f); arcTo(9f, 9f, 0f, true, true, 3f, 12f); arcTo(9f, 9f, 0f, true, true, 21f, 12f)
+                moveTo(9.6f, 9.6f)
+                curveTo(9.6f, 8.1f, 10.7f, 7.1f, 12f, 7.1f)
+                curveTo(13.4f, 7.1f, 14.5f, 8.1f, 14.5f, 9.4f)
+                curveTo(14.5f, 11.2f, 12f, 11.4f, 12f, 13.4f)
+            }
+            dot(12f, 16.7f, 1.15f)
         }
     }
 
