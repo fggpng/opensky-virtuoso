@@ -48,7 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -99,6 +104,7 @@ data class UiPalette(
     val success: Color,
     val tabInactive: Color,
     val tabActivePill: Color,
+    val tabPillRim: Color,
     val segmentTrack: Color,
     val segmentThumb: Color,
     val disabledFill: Color,
@@ -131,6 +137,7 @@ private val CupertinoPalette = UiPalette(
     success = Color(0xFF30D158),
     tabInactive = Color.White.copy(alpha = 0.55f),
     tabActivePill = Color.White.copy(alpha = 0.12f),
+    tabPillRim = Color.White,
     segmentTrack = Color.White.copy(alpha = 0.08f),
     segmentThumb = Color.White.copy(alpha = 0.20f),
     disabledFill = Color.White.copy(alpha = 0.08f),
@@ -164,6 +171,7 @@ private val NightGlassPalette = UiPalette(
     success = NightRedAccent,
     tabInactive = NightRedDim.copy(alpha = 0.80f),
     tabActivePill = NightRedAccent.copy(alpha = 0.14f),
+    tabPillRim = NightRedAccent,
     segmentTrack = NightRedDeep.copy(alpha = 0.55f),
     segmentThumb = NightRedLine,
     disabledFill = NightRedDeep.copy(alpha = 0.40f),
@@ -193,6 +201,7 @@ private fun flatPalette(cs: ColorScheme, night: Boolean): UiPalette {
         success = cs.tertiary,
         tabInactive = cs.onSurfaceVariant,
         tabActivePill = cs.secondaryContainer,
+        tabPillRim = cs.primary,
         segmentTrack = cs.surfaceVariant,
         segmentThumb = cs.secondaryContainer,
         disabledFill = cs.onSurface.copy(alpha = 0.12f),
@@ -559,7 +568,7 @@ fun GlassTabBar(backdrop: GlassBackdropState, modifier: Modifier = Modifier, con
             .height(GlassMetrics.TabBarHeight),
     ) {
         // Fondo aparte: al cambiar de pestaña solo se recomponen las pestañas, el cristal no se toca.
-        GlassBarBackground(backdrop, panel, glass.bar, glass.barShadow)
+        GlassBarBackground(backdrop, panel, glass.bar, glass.barShadow, glass.barLens)
         Row(
             Modifier.matchParentSize().clip(CapsuleShape).padding(6.dp).selectableGroup(),
             verticalAlignment = Alignment.CenterVertically,
@@ -568,14 +577,34 @@ fun GlassTabBar(backdrop: GlassBackdropState, modifier: Modifier = Modifier, con
     }
 }
 
+/** Burbuja de cristal (pestaña activa): relleno claro y filo especular diagonal, creados una vez por tamaño. */
+private fun Modifier.glassBubble(fill: Color, rimColor: Color): Modifier = drawWithCache {
+    val outline = Path().apply { addOutline(CapsuleShape.createOutline(size, layoutDirection, this@drawWithCache)) }
+    val rim = Brush.linearGradient(
+        0f to rimColor.copy(alpha = 0.34f), 0.5f to rimColor.copy(alpha = 0.05f), 1f to rimColor.copy(alpha = 0.16f),
+        start = Offset.Zero, end = Offset(size.width, size.height),
+    )
+    val stroke = Stroke(width = 1.dp.toPx())
+    onDrawBehind {
+        drawPath(outline, fill)
+        drawPath(outline, rim, style = stroke)
+    }
+}
+
 @Composable
-private fun BoxScope.GlassBarBackground(backdrop: GlassBackdropState, panel: GlassPanelState, material: GlassMaterial, shadow: GlassShadow) {
-    Spacer(Modifier.matchParentSize().glassPanel(backdrop, panel, CapsuleShape, material, shadow))
+private fun BoxScope.GlassBarBackground(
+    backdrop: GlassBackdropState,
+    panel: GlassPanelState,
+    material: GlassMaterial,
+    shadow: GlassShadow,
+    lens: GlassLens,
+) {
+    Spacer(Modifier.matchParentSize().glassPanel(backdrop, panel, CapsuleShape, material, shadow, lens))
 }
 
 /**
- * Pestaña: activa con pastilla translúcida e icono y texto de acento; inactiva en gris. El cambio es
- * instantáneo, como en iOS (sin animaciones que recompongan la barra en cada fotograma).
+ * Pestaña: la activa lleva una burbuja de cristal (relleno muy claro con su propio filo especular)
+ * e icono y texto de acento; la inactiva va en gris. El cambio es instantáneo, como en iOS.
  */
 @Composable
 fun RowScope.GlassTab(selected: Boolean, label: String, icon: ImageVector, onClick: () -> Unit) {
@@ -585,8 +614,8 @@ fun RowScope.GlassTab(selected: Boolean, label: String, icon: ImageVector, onCli
         Modifier
             .weight(1f)
             .fillMaxHeight()
+            .then(if (selected) Modifier.glassBubble(palette.tabActivePill, palette.tabPillRim) else Modifier)
             .clip(CapsuleShape)
-            .then(if (selected) Modifier.background(palette.tabActivePill) else Modifier)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
