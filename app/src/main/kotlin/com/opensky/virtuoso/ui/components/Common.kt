@@ -1,6 +1,5 @@
 package com.opensky.virtuoso.ui.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -21,13 +20,19 @@ import com.opensky.virtuoso.astronomy.EquatorialCoord
 import com.opensky.virtuoso.astronomy.HorizontalCoord
 import com.opensky.virtuoso.astronomy.math.Angles
 
+/**
+ * Tarjeta con título. Con el efecto cristal es una sección agrupada de iOS (título en mayúsculas
+ * fuera y tarjeta de cristal líquido con el texto en blanco); sin él, la tarjeta Material de siempre.
+ */
 @Composable
 fun InfoCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val glass = LocalGlass.current
+    if (LocalGlass.current.enabled) {
+        GroupedSection(title, modifier, content = content)
+        return
+    }
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = if (glass.enabled) glass.cardColor else MaterialTheme.colorScheme.surfaceVariant),
-        border = if (glass.enabled) BorderStroke(1.dp, glass.borderBrush) else null,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)

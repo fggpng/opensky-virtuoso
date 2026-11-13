@@ -2,6 +2,8 @@ package com.opensky.virtuoso.ui.components
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
@@ -71,6 +73,68 @@ object OpenSkyIcons {
         icon("Stop") {
             path(fill = SolidColor(Color.White)) {
                 moveTo(6f, 6f); horizontalLineTo(18f); verticalLineTo(18f); horizontalLineTo(6f); close()
+            }
+        }
+    }
+
+    /** Triángulo de advertencia con «!» calado (trazado de Material Icons, Apache 2.0). */
+    val Warning: ImageVector by lazy {
+        icon("Warning") {
+            path(fill = SolidColor(Color.White)) {
+                moveTo(1f, 21f); horizontalLineToRelative(22f); lineTo(12f, 2f); lineTo(1f, 21f); close()
+                moveTo(13f, 18f); horizontalLineToRelative(-2f); verticalLineToRelative(-2f); horizontalLineToRelative(2f); verticalLineToRelative(2f); close()
+                moveTo(13f, 14f); horizontalLineToRelative(-2f); verticalLineToRelative(-4f); horizontalLineToRelative(2f); verticalLineToRelative(4f); close()
+            }
+        }
+    }
+
+    /** Flecha circular de reinicio (trazado de Material Icons «refresh», Apache 2.0). */
+    val Refresh: ImageVector by lazy {
+        icon("Refresh") {
+            path(fill = SolidColor(Color.White)) {
+                moveTo(17.65f, 6.35f)
+                curveTo(16.2f, 4.9f, 14.21f, 4f, 12f, 4f)
+                curveToRelative(-4.42f, 0f, -7.99f, 3.58f, -7.99f, 8f)
+                reflectiveCurveToRelative(3.57f, 8f, 7.99f, 8f)
+                curveToRelative(3.73f, 0f, 6.84f, -2.55f, 7.73f, -6f)
+                horizontalLineToRelative(-2.08f)
+                curveToRelative(-0.82f, 2.33f, -3.04f, 4f, -5.65f, 4f)
+                curveToRelative(-3.31f, 0f, -6f, -2.69f, -6f, -6f)
+                reflectiveCurveToRelative(2.69f, -6f, 6f, -6f)
+                curveToRelative(1.66f, 0f, 3.14f, 0.69f, 4.22f, 1.78f)
+                lineTo(13f, 11f)
+                horizontalLineToRelative(7f)
+                verticalLineTo(4f)
+                lineToRelative(-2.35f, 2.35f)
+                close()
+            }
+        }
+    }
+
+    /** Enchufe (montura sin conectar). */
+    val Plug: ImageVector by lazy {
+        icon("Plug") {
+            path(fill = SolidColor(Color.White)) {
+                moveTo(8.5f, 2f); horizontalLineTo(10.5f); verticalLineTo(7f); horizontalLineTo(8.5f); close()
+                moveTo(13.5f, 2f); horizontalLineTo(15.5f); verticalLineTo(7f); horizontalLineTo(13.5f); close()
+                moveTo(6f, 7f); horizontalLineTo(18f); verticalLineTo(11f)
+                curveTo(18f, 14.31f, 15.31f, 17f, 12f, 17f)
+                curveTo(8.69f, 17f, 6f, 14.31f, 6f, 11f); close()
+                moveTo(11f, 17f); horizontalLineTo(13f); verticalLineTo(22f); horizontalLineTo(11f); close()
+            }
+        }
+    }
+
+    /** Chevrón «›» de las filas que abren otra pantalla. */
+    val Chevron: ImageVector by lazy {
+        icon("Chevron") {
+            path(
+                stroke = SolidColor(Color.White),
+                strokeLineWidth = 2.2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round,
+            ) {
+                moveTo(9f, 5f); lineTo(16f, 12f); lineTo(9f, 19f)
             }
         }
     }

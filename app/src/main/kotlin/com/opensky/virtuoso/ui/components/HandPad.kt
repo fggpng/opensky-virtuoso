@@ -1,6 +1,7 @@
 package com.opensky.virtuoso.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,12 +66,24 @@ private fun PadButton(label: String, direction: PadDirection, size: Dp, onPress:
     var pressed by remember { mutableStateOf(false) }
     val currentOnPress by rememberUpdatedState(onPress)
     val currentOnRelease by rememberUpdatedState(onRelease)
-    val color = if (pressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
+    val glass = LocalGlass.current
+    val palette = uiPalette()
+    // Con cristal: tecla translúcida con canto de luz; al pulsarla se llena del color de acento.
+    val shape = if (glass.enabled) ContinuousRoundedShape(20.dp) else RoundedCornerShape(18.dp)
+    val background = when {
+        glass.enabled -> if (pressed) palette.accent else palette.controlFill
+        else -> if (pressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
+    }
+    val textColor = when {
+        glass.enabled -> if (pressed) palette.onAccent else palette.textPrimary
+        else -> if (pressed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+    }
     Box(
         modifier = Modifier
             .size(size)
-            .clip(RoundedCornerShape(18.dp))
-            .background(color)
+            .then(if (glass.enabled) Modifier.border(1.dp, glass.card.rim, shape) else Modifier)
+            .clip(shape)
+            .background(background)
             .pointerInput(direction) {
                 detectTapGestures(onPress = {
                     pressed = true
@@ -84,11 +98,7 @@ private fun PadButton(label: String, direction: PadDirection, size: Dp, onPress:
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            label, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 18.sp,
-            color = if (pressed) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+        Text(label, fontWeight = FontWeight.Bold, fontSize = 16.sp, lineHeight = 18.sp, color = textColor, textAlign = TextAlign.Center)
     }
 }
 
@@ -99,18 +109,30 @@ fun PadOptions(
     onRateChange: (Int) -> Unit, onModeChange: (PadMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val glass = LocalGlass.current.enabled
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Velocidad: ${PAD_RATES[rateIndex].let { if (it < 10) "%.0f".format(it) else it.roundToInt().toString() }}× sidérea",
-            style = MaterialTheme.typography.titleSmall)
+        Text(
+            "Velocidad: ${PAD_RATES[rateIndex].let { if (it < 10) "%.0f".format(it) else it.roundToInt().toString() }}× sidérea",
+            style = if (glass) MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            else MaterialTheme.typography.titleSmall,
+        )
         Slider(
             value = rateIndex.toFloat(),
             onValueChange = { onRateChange(it.roundToInt().coerceIn(PAD_RATES.indices)) },
             valueRange = 0f..(PAD_RATES.size - 1).toFloat(),
             steps = PAD_RATES.size - 2,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = mode == PadMode.ALT_AZ, onClick = { onModeChange(PadMode.ALT_AZ) }, label = { Text("Ejes Alt/Az") })
-            FilterChip(selected = mode == PadMode.RA_DEC, onClick = { onModeChange(PadMode.RA_DEC) }, label = { Text("AR/Dec (N-S-E-O)") })
+        if (glass) {
+            SegmentedControl(
+                options = listOf("Ejes Alt/Az", "AR/Dec (N-S-E-O)"),
+                selectedIndex = if (mode == PadMode.ALT_AZ) 0 else 1,
+                onSelect = { onModeChange(if (it == 0) PadMode.ALT_AZ else PadMode.RA_DEC) },
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = mode == PadMode.ALT_AZ, onClick = { onModeChange(PadMode.ALT_AZ) }, label = { Text("Ejes Alt/Az") })
+                FilterChip(selected = mode == PadMode.RA_DEC, onClick = { onModeChange(PadMode.RA_DEC) }, label = { Text("AR/Dec (N-S-E-O)") })
+            }
         }
     }
 }
