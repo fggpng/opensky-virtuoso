@@ -1,7 +1,12 @@
 package com.opensky.virtuoso.ui.screens
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.graphics.Color
 import com.opensky.virtuoso.ui.components.GlassSupport
+import com.opensky.virtuoso.ui.components.InsetDivider
+import com.opensky.virtuoso.ui.components.LiquidGlassCard
+import com.opensky.virtuoso.ui.components.LocalGlass
+import com.opensky.virtuoso.ui.components.NavigationRow
 import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -48,14 +53,27 @@ import com.opensky.virtuoso.ui.viewmodel.MoreViewModel
 
 @Composable
 fun MoreScreen(onOpen: (String) -> Unit) {
+    val entries = listOf(
+        "sensors" to "Orientación por sensores (IMU + brújula)",
+        "stellarium" to "Puente Stellarium / LX200",
+        "catalog" to "Catálogo Tycho-2",
+        "settings" to "Ajustes y utilidades",
+        "update" to "Actualizar la app",
+    )
+    if (LocalGlass.current.enabled) {
+        // Con cristal: menú agrupado de iOS (filas con chevrón dentro de una tarjeta de cristal).
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding())) {
+            LiquidGlassCard(contentPadding = PaddingValues(0.dp), verticalArrangement = Arrangement.Top) {
+                entries.forEachIndexed { i, (route, label) ->
+                    if (i > 0) InsetDivider(startInset = 16.dp)
+                    NavigationRow(label, onClick = { onOpen(route) })
+                }
+            }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(
-            "sensors" to "Orientación por sensores (IMU + brújula)",
-            "stellarium" to "Puente Stellarium / LX200",
-            "catalog" to "Catálogo Tycho-2",
-            "settings" to "Ajustes y utilidades",
-            "update" to "Actualizar la app",
-        ).forEach { (route, label) ->
+        entries.forEach { (route, label) ->
             Text(label, style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.fillMaxWidth().clickable { onOpen(route) }.padding(vertical = 16.dp))
             HorizontalDivider()

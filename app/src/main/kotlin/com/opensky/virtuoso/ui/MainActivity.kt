@@ -5,23 +5,18 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +29,6 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -42,7 +36,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -55,14 +48,17 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.opensky.virtuoso.OpenSkyApp
+import com.opensky.virtuoso.ui.components.AmbientBackdrop
 import com.opensky.virtuoso.ui.components.GlassAlertDialog
+import com.opensky.virtuoso.ui.components.GlassMetrics
 import com.opensky.virtuoso.ui.components.GlassStyle
 import com.opensky.virtuoso.ui.components.GlassSupport
+import com.opensky.virtuoso.ui.components.GlassTab
+import com.opensky.virtuoso.ui.components.GlassTabBar
+import com.opensky.virtuoso.ui.components.LargeTitle
 import com.opensky.virtuoso.ui.components.LocalBottomInset
 import com.opensky.virtuoso.ui.components.LocalGlass
 import com.opensky.virtuoso.ui.components.OpenSkyIcons
-import com.opensky.virtuoso.ui.components.SkyBackdrop
-import com.opensky.virtuoso.ui.components.glassPanel
 import com.opensky.virtuoso.ui.components.glassSource
 import com.opensky.virtuoso.ui.components.rememberGlassBackdropState
 import com.opensky.virtuoso.ui.screens.AlignmentScreen
@@ -99,7 +95,7 @@ private val TABS = listOf(
     Tab("more", "Más", OpenSkyIcons.More),
 )
 
-private val GLASS_BAR_HEIGHT = 72.dp
+private val TAB_ROUTES = TABS.map { it.route }.toSet()
 
 private val TITLES = mapOf(
     "home" to "OpenSky Virtuoso Controller", "align" to "Alineación", "targets" to "Objetivos",
@@ -108,11 +104,18 @@ private val TITLES = mapOf(
     "update" to "Actualizar la app",
 )
 
+/** Títulos grandes (modo cristal): el de Inicio se acorta para que quepa en una línea a 30 sp. */
+private val LARGE_TITLES = mapOf("home" to "OpenSky Virtuoso")
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // La app siempre es oscura: iconos claros en las barras del sistema aunque el teléfono esté en tema claro.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         val container = (application as OpenSkyApp).container
 
         // Pantalla encendida y brillo mínimo en modo nocturno (sin permisos especiales).
@@ -133,7 +136,7 @@ class MainActivity : ComponentActivity() {
                 enabled = GlassSupport.available && (if (settings.nightMode) settings.glassNight else settings.glassDay),
                 night = settings.nightMode,
             )
-            OpenSkyTheme(redNightMode = settings.nightMode) {
+            OpenSkyTheme(redNightMode = settings.nightMode, cupertino = glass.enabled) {
                 CompositionLocalProvider(LocalGlass provides glass) {
                     OpenSkyRoot(appViewModelFactory(container))
                 }
@@ -186,44 +189,57 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
 
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route ?: "home"
+    // Las pantallas que se abren desde «Más» mantienen marcada esa pestaña.
+    val selectedTab = if (route in TAB_ROUTES) route else "more"
+    val openTab: (String) -> Unit = { target ->
+        nav.navigate(target) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     val glass = LocalGlass.current
     val backdrop = rememberGlassBackdropState()
-    val tabs: @Composable RowScope.() -> Unit = {
-        TABS.forEach { tab ->
-            NavigationBarItem(
-                selected = route == tab.route,
-                onClick = {
-                    nav.navigate(tab.route) {
-                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                label = { Text(tab.label) },
-            )
-        }
-    }
-    // Con cristal la barra inferior flota sobre el contenido: las pantallas dejan libre ese espacio al final.
+    // Con cristal la barra inferior flota sobre el contenido: cada pantalla deja libre al final
+    // 64 dp de barra + 16 dp de margen + 24 dp de aire (104 dp) más la barra de navegación del sistema.
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val floatingBarSpace = if (glass.enabled) navInset + GLASS_BAR_HEIGHT + 16.dp else 0.dp
+    val floatingBarSpace = if (glass.enabled) {
+        navInset + GlassMetrics.TabBarHeight + GlassMetrics.TabBarMargin + GlassMetrics.TabBarClearance
+    } else 0.dp
 
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().then(if (glass.enabled) Modifier.glassSource(backdrop) else Modifier)) {
-            if (glass.enabled) SkyBackdrop(glass.night)
+            if (glass.enabled) AmbientBackdrop(glass.night)
             Scaffold(
                 containerColor = if (glass.enabled) Color.Transparent else MaterialTheme.colorScheme.background,
+                // Con el fondo transparente, Material no sabe qué color de texto usar y cae en negro:
+                // se fija explícitamente (blanco con cristal, rojo en modo nocturno).
+                contentColor = MaterialTheme.colorScheme.onBackground,
                 topBar = {
-                    TopAppBar(
-                        title = { Text(TITLES[route] ?: "OpenSky") },
-                        colors = if (glass.enabled) TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.Transparent, scrolledContainerColor = Color.Transparent,
-                        ) else TopAppBarDefaults.topAppBarColors(),
+                    if (glass.enabled) LargeTitle(LARGE_TITLES[route] ?: TITLES[route] ?: "OpenSky")
+                    else TopAppBar(title = { Text(TITLES[route] ?: "OpenSky") })
+                },
+                snackbarHost = {
+                    SnackbarHost(
+                        snackbar,
+                        Modifier.padding(bottom = if (glass.enabled) GlassMetrics.TabBarHeight + GlassMetrics.TabBarMargin + 8.dp else 0.dp),
                     )
                 },
-                snackbarHost = { SnackbarHost(snackbar, Modifier.padding(bottom = if (glass.enabled) GLASS_BAR_HEIGHT + 16.dp else 0.dp)) },
-                bottomBar = { if (!glass.enabled) NavigationBar(content = tabs) },
+                bottomBar = {
+                    if (!glass.enabled) {
+                        NavigationBar {
+                            TABS.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = selectedTab == tab.route,
+                                    onClick = { openTab(tab.route) },
+                                    icon = { Icon(tab.icon, contentDescription = tab.label) },
+                                    label = { Text(tab.label) },
+                                )
+                            }
+                        }
+                    }
+                },
             ) { padding ->
                 val contentPadding = if (glass.enabled) PaddingValues(top = padding.calculateTopPadding()) else padding
                 CompositionLocalProvider(LocalBottomInset provides floatingBarSpace) {
@@ -245,18 +261,17 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
             }
         }
         if (glass.enabled) {
-            // Barra de pestañas de cristal: flota sobre las pantallas y desenfoca lo que pasa por detrás.
-            val shape = RoundedCornerShape(36.dp)
-            Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.navigationBars)
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-                    .height(GLASS_BAR_HEIGHT)
-                    .glassPanel(backdrop, shape, glass)
-                    .clip(shape),
-                verticalAlignment = Alignment.CenterVertically,
-                content = tabs,
-            )
+            // Barra de pestañas de cristal: cápsula flotante que desenfoca lo que pasa por detrás.
+            GlassTabBar(backdrop, Modifier.align(Alignment.BottomCenter)) {
+                TABS.forEach { tab ->
+                    GlassTab(
+                        selected = selectedTab == tab.route,
+                        label = tab.label,
+                        icon = tab.icon,
+                        onClick = { openTab(tab.route) },
+                    )
+                }
+            }
         }
     }
 }
