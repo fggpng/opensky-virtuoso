@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,10 +42,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -208,8 +211,13 @@ fun uiPalette(): UiPalette {
     }
 }
 
+// Las esquinas continuas se usan para PINTAR. Para RECORTAR (que las ondas de toque no se salgan) se
+// usa el rectángulo redondeado del mismo radio: la GPU lo recorta de forma analítica, sin máscaras.
 private val CardShape = ContinuousRoundedShape(24.dp)
+private val CardClip = RoundedCornerShape(24.dp)
 private val ControlShape = ContinuousRoundedShape(14.dp)
+private val ControlClip = RoundedCornerShape(14.dp)
+private val CapsuleShape = RoundedCornerShape(percent = 50)
 
 // ---------------------------------------------------------------------------------------------
 // Estructura de pantalla
@@ -251,7 +259,8 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 
 /**
  * Tarjeta de cristal líquido: esquinas continuas de 24 dp, relleno translúcido con reflejo
- * diagonal, canto especular y sombra suave. El texto de dentro es blanco (o rojo de noche).
+ * diagonal y canto especular. Sin desenfoque: detrás solo pasa el fondo ambiental, que ya es difuso.
+ * El texto de dentro es blanco (o rojo de noche).
  */
 @Composable
 fun LiquidGlassCard(
@@ -262,12 +271,13 @@ fun LiquidGlassCard(
 ) {
     val glass = LocalGlass.current
     val palette = uiPalette()
+    // El mismo modificador entre recomposiciones: la caché de dibujo (ruta y degradados) no se rehace.
+    val surface = remember(glass.card) { Modifier.liquidGlass(CardShape, glass.card).clip(CardClip) }
     CompositionLocalProvider(LocalContentColor provides palette.textPrimary) {
         Column(
             modifier
                 .fillMaxWidth()
-                .liquidGlass(CardShape, glass.card)
-                .clip(CardShape)
+                .then(surface)
                 .padding(contentPadding),
             verticalArrangement = verticalArrangement,
             content = content,
@@ -427,13 +437,14 @@ fun SegmentedControl(options: List<String>, selectedIndex: Int, onSelect: (Int) 
     ) {
         options.forEachIndexed { i, label ->
             val selected = i == selectedIndex
-            val bg by animateColorAsState(if (selected) palette.segmentThumb else palette.segmentThumb.copy(alpha = 0f), label = "segment")
+            // El color animado se lee solo al dibujar: la animación no recompone nada.
+            val bg = animateColorAsState(if (selected) palette.segmentThumb else palette.segmentThumb.copy(alpha = 0f), label = "segment")
             Box(
                 Modifier
                     .weight(1f)
                     .fillMaxHeight()
                     .clip(thumb)
-                    .background(bg)
+                    .drawBehind { drawRect(bg.value) }
                     .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(i) }),
                 contentAlignment = Alignment.Center,
             ) {
@@ -470,8 +481,8 @@ fun PillButton(
         modifier
             .fillMaxWidth()
             .height(48.dp)
-            .clip(ControlShape)
-            .background(palette.buttonFill)
+            .background(palette.buttonFill, ControlShape)
+            .clip(ControlClip)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .alpha(if (enabled) 1f else 0.4f)
             .padding(horizontal = 16.dp),
@@ -494,8 +505,8 @@ fun ProminentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
         modifier
             .fillMaxWidth()
             .heightIn(min = 50.dp)
-            .clip(ControlShape)
-            .background(if (enabled) palette.accent else palette.disabledFill)
+            .background(if (enabled) palette.accent else palette.disabledFill, ControlShape)
+            .clip(ControlClip)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
@@ -518,7 +529,7 @@ fun TintButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
     Box(
         modifier
             .height(34.dp)
-            .clip(RoundedCornerShape(percent = 50))
+            .clip(CapsuleShape)
             .background(palette.accent.copy(alpha = if (enabled) 0.18f else 0.08f))
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp),
@@ -534,39 +545,48 @@ fun TintButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
 
 /**
  * Cápsula de cristal despegada de los bordes (16 dp a los lados y abajo, 64 dp de alto). Debajo
- * lleva desenfoque real del contenido que pasa por detrás.
+ * lleva desenfoque real del contenido que pasa por detrás, limitado a esta franja.
  */
 @Composable
 fun GlassTabBar(backdrop: GlassBackdropState, modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
     val glass = LocalGlass.current
-    val shape = RoundedCornerShape(percent = 50)
-    Row(
+    val panel = rememberGlassPanelState()
+    Box(
         modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(start = GlassMetrics.TabBarMargin, end = GlassMetrics.TabBarMargin, bottom = GlassMetrics.TabBarMargin)
-            .height(GlassMetrics.TabBarHeight)
-            .glassPanel(backdrop, shape, glass.bar)
-            .clip(shape)
-            .padding(6.dp)
-            .selectableGroup(),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
-    )
+            .height(GlassMetrics.TabBarHeight),
+    ) {
+        // Fondo aparte: al cambiar de pestaña solo se recomponen las pestañas, el cristal no se toca.
+        GlassBarBackground(backdrop, panel, glass.bar, glass.barShadow)
+        Row(
+            Modifier.matchParentSize().clip(CapsuleShape).padding(6.dp).selectableGroup(),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content,
+        )
+    }
 }
 
-/** Pestaña: activa con pastilla translúcida e icono y texto de acento; inactiva en gris. */
+@Composable
+private fun BoxScope.GlassBarBackground(backdrop: GlassBackdropState, panel: GlassPanelState, material: GlassMaterial, shadow: GlassShadow) {
+    Spacer(Modifier.matchParentSize().glassPanel(backdrop, panel, CapsuleShape, material, shadow))
+}
+
+/**
+ * Pestaña: activa con pastilla translúcida e icono y texto de acento; inactiva en gris. El cambio es
+ * instantáneo, como en iOS (sin animaciones que recompongan la barra en cada fotograma).
+ */
 @Composable
 fun RowScope.GlassTab(selected: Boolean, label: String, icon: ImageVector, onClick: () -> Unit) {
     val palette = uiPalette()
-    val pill by animateColorAsState(if (selected) palette.tabActivePill else palette.tabActivePill.copy(alpha = 0f), label = "tabPill")
-    val tint by animateColorAsState(if (selected) palette.accent else palette.tabInactive, label = "tabTint")
+    val tint = if (selected) palette.accent else palette.tabInactive
     Column(
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .clip(RoundedCornerShape(percent = 50))
-            .background(pill)
+            .clip(CapsuleShape)
+            .then(if (selected) Modifier.background(palette.tabActivePill) else Modifier)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,

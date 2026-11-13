@@ -10,6 +10,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -42,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -107,6 +114,10 @@ private val TITLES = mapOf(
 /** Títulos grandes (modo cristal): el de Inicio se acorta para que quepa en una línea a 30 sp. */
 private val LARGE_TITLES = mapOf("home" to "OpenSky Virtuoso")
 
+/** Paso entre dos pestañas de la barra (no entrar o salir de una pantalla de «Más»). */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(): Boolean =
+    initialState.destination.route in TAB_ROUTES && targetState.destination.route in TAB_ROUTES
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,9 +147,12 @@ class MainActivity : ComponentActivity() {
                 enabled = GlassSupport.available && (if (settings.nightMode) settings.glassNight else settings.glassDay),
                 night = settings.nightMode,
             )
+            // La misma fábrica siempre: si se creara de nuevo, cada cambio de ajustes (p. ej. mover el
+            // deslizador de velocidad) recompondría la app entera.
+            val factory = remember(container) { appViewModelFactory(container) }
             OpenSkyTheme(redNightMode = settings.nightMode, cupertino = glass.enabled) {
                 CompositionLocalProvider(LocalGlass provides glass) {
-                    OpenSkyRoot(appViewModelFactory(container))
+                    OpenSkyRoot(factory)
                 }
             }
         }
@@ -164,9 +178,11 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
     LaunchedEffect(Unit) { launcher.launch(permissions) }
 
     // Alarmas de seguridad de la montura (reinicio, atasco, parada no confirmada…): se muestran
-    // encima de cualquier pantalla hasta que el usuario las lee.
-    val mountState by homeVm.mount.collectAsStateWithLifecycle()
-    mountState?.alert?.let { alert ->
+    // encima de cualquier pantalla hasta que el usuario las lee. Solo se observa la alarma, no el
+    // estado completo (que cambia cada 500 ms): así la raíz no se recompone con cada lectura.
+    val mountAlert by remember(homeVm) { homeVm.mount.map { it?.alert }.distinctUntilChanged() }
+        .collectAsStateWithLifecycle(initialValue = homeVm.mount.value?.alert)
+    mountAlert?.let { alert ->
         GlassAlertDialog(
             onDismissRequest = {},
             title = { Text("⚠ Atención") },
@@ -243,7 +259,16 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
             ) { padding ->
                 val contentPadding = if (glass.enabled) PaddingValues(top = padding.calculateTopPadding()) else padding
                 CompositionLocalProvider(LocalBottomInset provides floatingBarSpace) {
-                    NavHost(nav, startDestination = "home", modifier = Modifier.padding(contentPadding)) {
+                    NavHost(
+                        nav,
+                        startDestination = "home",
+                        modifier = Modifier.padding(contentPadding),
+                        // Cambiar de pestaña es instantáneo, como en iOS (el fundido por defecto duraba
+                        // 700 ms dibujando dos pantallas a la vez). Entrar o salir de una pantalla de
+                        // «Más» usa un fundido corto.
+                        enterTransition = { if (isTabSwitch()) EnterTransition.None else fadeIn(tween(160)) },
+                        exitTransition = { if (isTabSwitch()) ExitTransition.None else fadeOut(tween(120)) },
+                    ) {
                         composable("home") { HomeScreen(homeVm, snackbar) { nav.navigate("sensors") } }
                         composable("align") {
                             AlignmentScreen(viewModel<AlignmentViewModel>(factory = factory), viewModel<ControlViewModel>(factory = factory), snackbar)

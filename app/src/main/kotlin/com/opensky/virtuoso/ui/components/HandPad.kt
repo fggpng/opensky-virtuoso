@@ -23,7 +23,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +60,9 @@ fun HandPad(
     }
 }
 
+private val PadKeyShape = ContinuousRoundedShape(20.dp)
+private val PadKeyFlatShape = RoundedCornerShape(18.dp)
+
 @Composable
 private fun PadButton(label: String, direction: PadDirection, size: Dp, onPress: (PadDirection) -> Unit, onRelease: () -> Unit) {
     var pressed by remember { mutableStateOf(false) }
@@ -69,7 +71,9 @@ private fun PadButton(label: String, direction: PadDirection, size: Dp, onPress:
     val glass = LocalGlass.current
     val palette = uiPalette()
     // Con cristal: tecla translúcida con canto de luz; al pulsarla se llena del color de acento.
-    val shape = if (glass.enabled) ContinuousRoundedShape(20.dp) else RoundedCornerShape(18.dp)
+    // No se recorta (el texto no se sale), así que la forma continua solo se pinta: sin máscaras.
+    val shape = if (glass.enabled) PadKeyShape else PadKeyFlatShape
+    val rim = remember(glass.card) { glass.card.rimBrush() }
     val background = when {
         glass.enabled -> if (pressed) palette.accent else palette.controlFill
         else -> if (pressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
@@ -81,9 +85,8 @@ private fun PadButton(label: String, direction: PadDirection, size: Dp, onPress:
     Box(
         modifier = Modifier
             .size(size)
-            .then(if (glass.enabled) Modifier.border(1.dp, glass.card.rim, shape) else Modifier)
-            .clip(shape)
-            .background(background)
+            .background(background, shape)
+            .then(if (glass.enabled) Modifier.border(1.dp, rim, shape) else Modifier)
             .pointerInput(direction) {
                 detectTapGestures(onPress = {
                     pressed = true
