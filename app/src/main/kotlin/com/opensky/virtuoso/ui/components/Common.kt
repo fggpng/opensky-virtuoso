@@ -1,5 +1,6 @@
 package com.opensky.virtuoso.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -22,9 +23,11 @@ import com.opensky.virtuoso.astronomy.math.Angles
 
 @Composable
 fun InfoCard(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val glass = LocalGlass.current
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(containerColor = if (glass.enabled) glass.cardColor else MaterialTheme.colorScheme.surfaceVariant),
+        border = if (glass.enabled) BorderStroke(1.dp, glass.borderBrush) else null,
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)

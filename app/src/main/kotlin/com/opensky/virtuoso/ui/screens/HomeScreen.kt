@@ -1,5 +1,9 @@
 package com.opensky.virtuoso.ui.screens
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -64,9 +68,11 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
     val checking by vm.checking.collectAsStateWithLifecycle()
     val locationKnown by vm.locationKnown.collectAsStateWithLifecycle()
     MessageEffect(message, snackbar, vm::clearMessage)
+    var manualOpen by rememberSaveable { mutableStateOf(false) }
+    if (manualOpen) ManualStartDialog(vm) { manualOpen = false }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         InfoCard("Equipo de observación") {
@@ -143,6 +149,7 @@ fun HomeScreen(vm: HomeViewModel, snackbar: SnackbarHostState, onOpenSensors: ()
                     "ya corrige la declinación magnética) y pulsa el botón. Si el tubo se ve distinto de lo que dice la app, no hagas GoTo.")
                 Button(onClick = { vm.confirmHome() }, Modifier.fillMaxWidth()) { Text("El tubo está horizontal hacia el norte") }
                 OutlinedButton(onClick = onOpenSensors, Modifier.fillMaxWidth()) { Text("Medir la posición con el teléfono sobre el tubo") }
+                OutlinedButton(onClick = { manualOpen = true }, Modifier.fillMaxWidth()) { Text("Escribir hacia dónde apunta el tubo") }
                 OutlinedButton(onClick = { vm.checkAltitudeWithPhone() }, enabled = !checking, modifier = Modifier.fillMaxWidth()) {
                     Text(if (checking) "Midiendo… no muevas el teléfono" else "Comprobar altura con el teléfono")
                 }

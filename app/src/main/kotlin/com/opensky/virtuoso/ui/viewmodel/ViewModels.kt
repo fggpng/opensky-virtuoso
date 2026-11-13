@@ -1,5 +1,11 @@
 package com.opensky.virtuoso.ui.viewmodel
 
+import com.opensky.virtuoso.control.StartPosition
+import com.opensky.virtuoso.control.ManualStartPreview
+import com.opensky.virtuoso.control.ManualHeading
+import com.opensky.virtuoso.control.HeadingReference
+import com.opensky.virtuoso.control.Diagnostics
+import android.hardware.GeomagneticField
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -146,6 +152,71 @@ class HomeViewModel(c: AppContainer) : MountAwareViewModel(c) {
             _checking.value = false
         }
     }
+    // ---------------------------------------------------- posición de inicio escrita a mano
+
+    private val _manualPreview = MutableStateFlow<ManualStartPreview?>(null)
+    /** Resumen para revisar antes de aplicar (null = el usuario aún está escribiendo). */
+    val manualPreview: StateFlow<ManualStartPreview?> = _manualPreview.asStateFlow()
+    private val _manualError = MutableStateFlow<String?>(null)
+    val manualError: StateFlow<String?> = _manualError.asStateFlow()
+
+    /** Declinación magnética del sitio con el modelo magnético mundial de Android, o null sin ubicación. */
+    fun declinationHere(): Double? {
+        if (!c.session.siteKnown()) return null
+        val loc = c.session.siteOrNull()?.location ?: return null
+        return GeomagneticField(loc.latitudeDeg.toFloat(), loc.longitudeDeg.toFloat(), loc.elevationM.toFloat(), System.currentTimeMillis())
+            .declination.toDouble()
+    }
+
+    /**
+     * Valida lo escrito y arma el resumen. Si [measureAltitude], el teléfono está apoyado en el tubo:
+     * da la altura (fiable) y su brújula sirve para detectar un número mal escrito.
+     */
+    fun prepareManualStart(azText: String, reference: HeadingReference, measureAltitude: Boolean) = viewModelScope.launch {
+        val az = ManualHeading.parseAzimuth(azText)
+        if (az == null) { _manualError.value = "Escribe el rumbo como un número entre 0 y 360."; return@launch }
+        val decl = declinationHere()
+        val trueAz = ManualHeading.trueAzimuth(az, reference, decl)
+        if (trueAz == null) {
+            _manualError.value = "Sin ubicación no se puede corregir la declinación de la brújula. Espera el GPS o lee el rumbo en una app de mapa del cielo."
+            return@launch
+        }
+        var alt = 0.0
+        var phoneAz: Double? = null
+        var interference = false
+        if (measureAltitude) {
+            _checking.value = true
+            try {
+                val o = c.sensors.captureAverage(2000)
+                if (o == null) { _manualError.value = "Sin lecturas del sensor del teléfono."; return@launch }
+                alt = o.altitudeDeg; phoneAz = o.trueAzimuthDeg; interference = o.interference
+            } finally {
+                _checking.value = false
+            }
+        }
+        _manualError.value = null
+        _manualPreview.value = ManualStartPreview(az, reference, decl, trueAz, alt, measureAltitude, phoneAz, interference)
+    }
+
+    /** Vuelve a la pantalla de edición conservando lo escrito. */
+    fun editManualStart() { _manualPreview.value = null }
+
+    fun cancelManualStart() { _manualPreview.value = null; _manualError.value = null }
+
+    fun applyManualStart() = viewModelScope.launch {
+        val p = _manualPreview.value ?: return@launch
+        _manualPreview.value = null
+        val ctrl = requireController() ?: return@launch
+        runCatching {
+            Diagnostics.log(p.logLine())
+            ctrl.setInitialOrientation(p.trueAzDeg, p.altDeg, StartPosition.MANUAL)
+            c.alignment.reset()
+        }.onSuccess {
+            _message.value = "Posición de inicio: tubo hacia el %s (Az %.1f°, Alt %.1f°). Ahora alinea con estrellas."
+                .format(ManualHeading.cardinalName(p.trueAzDeg), p.trueAzDeg, p.altDeg)
+        }.onFailure { _message.value = "Error: ${it.message}" }
+    }
+
     val wifi = c.wifi.state
     val location = c.locationTime.location
     val time = c.locationTime.time

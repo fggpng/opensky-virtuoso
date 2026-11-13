@@ -1,5 +1,6 @@
 package com.opensky.virtuoso.ui.screens
 
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,7 +41,7 @@ fun SensorScreen(vm: SensorViewModel, snackbar: SnackbarHostState) {
     MessageEffect(message, snackbar, vm::clearMessage)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (!vm.available) WarningText("Este teléfono no tiene sensor de vector de rotación (giroscopio/brújula).")

@@ -1,5 +1,6 @@
 package com.opensky.virtuoso.ui.screens
 
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,7 +49,7 @@ fun ControlScreen(vm: ControlViewModel, snackbar: SnackbarHostState) {
     MessageEffect(message, snackbar, vm::clearMessage)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Button(

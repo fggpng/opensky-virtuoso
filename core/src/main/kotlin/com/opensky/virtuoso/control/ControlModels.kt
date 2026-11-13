@@ -66,6 +66,7 @@ enum class StartPosition(val label: String) {
     UNCONFIRMED("Sin confirmar"),
     HOME("Horizontal hacia el norte (confirmado)"),
     PHONE("Medida con el teléfono sobre el tubo"),
+    MANUAL("Escrita a mano (brújula o app de cielo)"),
 }
 
 /** Resultado de comparar la altura que cree la app con la que mide el teléfono sobre el tubo. */

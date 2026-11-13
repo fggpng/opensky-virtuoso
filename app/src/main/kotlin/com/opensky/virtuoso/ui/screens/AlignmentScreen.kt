@@ -1,5 +1,7 @@
 package com.opensky.virtuoso.ui.screens
 
+import com.opensky.virtuoso.ui.components.GlassAlertDialog
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -50,7 +51,7 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
     val padMessage by pad.message.collectAsStateWithLifecycle()
     val doubtful by vm.doubtful.collectAsStateWithLifecycle()
     doubtful?.let { d ->
-        AlertDialog(
+        GlassAlertDialog(
             onDismissRequest = { vm.dismissDoubtful() },
             title = { Text("¿Seguro que es ${d.star.name}?") },
             text = {
@@ -65,7 +66,7 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
     MessageEffect(padMessage, snackbar, pad::clearMessage)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (mount == null) WarningText("Conecta la montura en Inicio antes de alinear.")
