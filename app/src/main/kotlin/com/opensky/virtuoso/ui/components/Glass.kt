@@ -193,11 +193,18 @@ private val NightDialog = NightCard.copy(base = Color(0xFF120000).copy(alpha = 0
 
 private val BarShadow = GlassShadow(Color.Black.copy(alpha = 0.40f), spread = 18.dp, offsetY = 8.dp)
 
-// Lente de día: exactamente la del shader de referencia (tinte 0.08/0.10/0.14 al 18 %, brillos blancos).
-private val DayLens = GlassLens(tint = Color(0.08f, 0.10f, 0.14f), tintAmount = 0.18f, light = Color.White)
+// Lente de día: tinte 0.08/0.10/0.14 al 18 %. El filo brillante del shader se sustituye por un trazo
+// fino de 1 dp blanco al 12 %, y el brillo del bisel se suaviza para que no parezca un borde grueso.
+private val DayLens = GlassLens(
+    tint = Color(0.08f, 0.10f, 0.14f), tintAmount = 0.18f, light = Color.White,
+    glow = 0.12f, rim = 0f, cylinder = 0.08f, border = Color.White.copy(alpha = 0.12f),
+)
 
-// Lente de noche: tinte casi negro y brillos rojo tenue (nada de blanco).
-private val NightLens = GlassLens(tint = Color(0.05f, 0f, 0f), tintAmount = 0.25f, light = Color(0.55f, 0.06f, 0.05f))
+// Lente de noche: tinte casi negro y brillos y borde en rojo tenue (nada de blanco).
+private val NightLens = GlassLens(
+    tint = Color(0.05f, 0f, 0f), tintAmount = 0.25f, light = Color(0.55f, 0.06f, 0.05f),
+    glow = 0.12f, rim = 0f, cylinder = 0.08f, border = Color(0xFFE53935).copy(alpha = 0.22f),
+)
 
 val LocalGlass = staticCompositionLocalOf { GlassStyle(enabled = false, night = false) }
 
@@ -349,7 +356,19 @@ fun rememberGlassPanelState(): GlassPanelState {
  * color de los brillos (blanco; rojo tenue en modo nocturno).
  */
 @Immutable
-data class GlassLens(val tint: Color, val tintAmount: Float, val light: Color)
+data class GlassLens(
+    val tint: Color,
+    val tintAmount: Float,
+    val light: Color,
+    /** Intensidad del brillo Fresnel interior del bisel. */
+    val glow: Float,
+    /** Intensidad del filo especular del shader (0: lo sustituye el trazo fino de [border]). */
+    val rim: Float,
+    /** Luz de cilindro arriba y abajo. */
+    val cylinder: Float,
+    /** Borde exterior de 1 dp. */
+    val border: Color,
+)
 
 /** Escala a la que se graba y desenfoca lo que hay detrás de la barra en el modo clásico (1/4). */
 private const val BLUR_DOWNSAMPLE = 0.25f
@@ -386,7 +405,8 @@ fun Modifier.glassPanel(
             liquidLens(backdrop, panel, lens)
         } else null
 
-        if (geometry != null) {
+        if (geometry != null && lens != null) {
+            val border = Stroke(width = 1.dp.toPx())
             onDrawBehind {
                 // Sombra exterior: la lente es opaca por dentro y la tapa.
                 shadowImage?.let { drawImage(it, topLeft = shadowTopLeft) }
@@ -398,6 +418,8 @@ fun Modifier.glassPanel(
                 clipPath(outline) {
                     translate(left = -geometry.left, top = -geometry.top) { drawLayer(panel.blurLayer) }
                 }
+                // Borde exterior: trazo fino de 1 dp (blanco al 12 %).
+                drawPath(outline, lens.border, style = border)
             }
         } else {
             val k = BLUR_DOWNSAMPLE
@@ -425,7 +447,9 @@ fun Modifier.glassPanel(
                     }
                     drawRect(surface)
                 }
-                drawPath(outline, rim, style = stroke)
+                // Mismo borde fino que la lente si es la barra; si no, el canto especular del material.
+                val borderColor = lens?.border
+                if (borderColor != null) drawPath(outline, borderColor, style = stroke) else drawPath(outline, rim, style = stroke)
             }
         }
     }
@@ -488,6 +512,9 @@ private class LiquidLens {
         shader.setFloatUniform("tint", optics.tint.red, optics.tint.green, optics.tint.blue)
         shader.setFloatUniform("tintAmount", optics.tintAmount)
         shader.setFloatUniform("light", optics.light.red, optics.light.green, optics.light.blue)
+        shader.setFloatUniform("glowStrength", optics.glow)
+        shader.setFloatUniform("rimStrength", optics.rim)
+        shader.setFloatUniform("cylinderStrength", optics.cylinder)
         // Primero el desenfoque suave y, sobre esa imagen, la refracción de la lente.
         val refraction = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content")
         val blur = android.graphics.RenderEffect.createBlurEffect(blurPx, blurPx, android.graphics.Shader.TileMode.CLAMP)
@@ -512,6 +539,9 @@ uniform float unit;
 uniform float3 tint;
 uniform float tintAmount;
 uniform float3 light;
+uniform float glowStrength;
+uniform float rimStrength;
+uniform float cylinderStrength;
 
 float sdRoundedBox(float2 p, float2 b, float r) {
     float2 q = abs(p) - b + r;
@@ -559,9 +589,9 @@ half4 main(float2 fragCoord) {
     float3 glass = mix(float3(red, green, blue), tint, tintAmount);
 
     // Bisel de volumen: brillo Fresnel interior, filo especular y luz de cilindro arriba y abajo.
-    float innerGlow = pow(edgeFactor, 2.6) * 0.28;
-    float rimHighlight = (1.0 - smoothstep(0.0, 2.2 * unit, distFromEdge)) * 0.65;
-    float verticalHighlight = pow(abs(p.y / halfSize.y), 3.0) * 0.14;
+    float innerGlow = pow(edgeFactor, 2.6) * glowStrength;
+    float rimHighlight = (1.0 - smoothstep(0.0, 2.2 * unit, distFromEdge)) * rimStrength;
+    float verticalHighlight = pow(abs(p.y / halfSize.y), 3.0) * cylinderStrength;
     glass += light * (innerGlow + rimHighlight + verticalHighlight);
     return half4(half3(glass), 1.0);
 }

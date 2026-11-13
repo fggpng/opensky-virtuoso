@@ -1,14 +1,18 @@
 package com.opensky.virtuoso.ui.components
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,13 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -63,6 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -136,10 +136,10 @@ private val CupertinoPalette = UiPalette(
     cautionBorder = IosOrange.copy(alpha = 0.28f),
     success = Color(0xFF30D158),
     tabInactive = Color.White.copy(alpha = 0.55f),
-    tabActivePill = Color.White.copy(alpha = 0.12f),
+    tabActivePill = IosBlue.copy(alpha = 0.20f),
     tabPillRim = Color.White,
     segmentTrack = Color.White.copy(alpha = 0.08f),
-    segmentThumb = Color.White.copy(alpha = 0.20f),
+    segmentThumb = Color(0xFF636366),
     disabledFill = Color.White.copy(alpha = 0.08f),
     disabledText = Color.White.copy(alpha = 0.30f),
 )
@@ -170,7 +170,7 @@ private val NightGlassPalette = UiPalette(
     cautionBorder = NightRedAccent.copy(alpha = 0.28f),
     success = NightRedAccent,
     tabInactive = NightRedDim.copy(alpha = 0.80f),
-    tabActivePill = NightRedAccent.copy(alpha = 0.14f),
+    tabActivePill = NightRedAccent.copy(alpha = 0.18f),
     tabPillRim = NightRedAccent,
     segmentTrack = NightRedDeep.copy(alpha = 0.55f),
     segmentThumb = NightRedLine,
@@ -234,22 +234,31 @@ private val CapsuleShape = RoundedCornerShape(percent = 50)
 
 /** Título grande de iOS (30 sp, negrita, alineado a la izquierda). */
 @Composable
-fun LargeTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        modifier = modifier
+fun LargeTitle(text: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
+    Row(
+        modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 6.dp)
-            .semantics { heading() },
-        color = MaterialTheme.colorScheme.onBackground,
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.5).sp,
-        maxLines = 2,
-        overflow = TextOverflow.Ellipsis,
-    )
+            .padding(start = 20.dp, end = 16.dp, top = 10.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            modifier = Modifier.weight(1f).semantics { heading() },
+            color = MaterialTheme.colorScheme.onBackground,
+            fontSize = 30.sp,
+            lineHeight = 36.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        // Indicador rápido (p. ej. estado de la montura) alineado con el título.
+        if (trailing != null) {
+            Spacer(Modifier.width(12.dp))
+            trailing()
+        }
+    }
 }
 
 /** Encabezado de sección de lista agrupada (mayúsculas, gris secundario). */
@@ -435,40 +444,60 @@ fun NavigationRow(title: String, onClick: () -> Unit, modifier: Modifier = Modif
     }
 }
 
-/** Control segmentado de iOS (dos o tres opciones excluyentes). */
+/**
+ * Control segmentado de ancho completo: una pastilla sólida se desliza bajo la opción elegida; las
+ * demás quedan con texto secundario sobre la pista translúcida. La posición animada se lee solo en
+ * la fase de colocación (offset con lambda), así que deslizarla no recompone nada.
+ */
 @Composable
 fun SegmentedControl(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val palette = uiPalette()
-    val track = RoundedCornerShape(10.dp)
-    val thumb = RoundedCornerShape(8.dp)
-    Row(
-        modifier.fillMaxWidth().height(36.dp).clip(track).background(palette.segmentTrack).padding(2.dp).selectableGroup(),
+    val count = options.size.coerceAtLeast(1)
+    val position by animateFloatAsState(
+        targetValue = selectedIndex.coerceIn(0, count - 1).toFloat(),
+        animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
+        label = "segment",
+    )
+    BoxWithConstraints(
+        modifier.fillMaxWidth().height(36.dp).clip(SegmentTrackShape).background(palette.segmentTrack).padding(2.dp),
     ) {
-        options.forEachIndexed { i, label ->
-            val selected = i == selectedIndex
-            // El color animado se lee solo al dibujar: la animación no recompone nada.
-            val bg = animateColorAsState(if (selected) palette.segmentThumb else palette.segmentThumb.copy(alpha = 0f), label = "segment")
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clip(thumb)
-                    .drawBehind { drawRect(bg.value) }
-                    .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(i) }),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    color = if (selected) palette.textPrimary else palette.textSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+        val segment = maxWidth / count
+        // Pastilla deslizante (fondo sólido contrastante).
+        Box(
+            Modifier
+                .width(segment)
+                .fillMaxHeight()
+                .offset { IntOffset((segment.toPx() * position).roundToInt(), 0) }
+                .background(palette.segmentThumb, SegmentThumbShape),
+        )
+        Row(Modifier.fillMaxSize().selectableGroup()) {
+            options.forEachIndexed { i, label ->
+                val selected = i == selectedIndex
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(SegmentThumbShape)
+                        .selectable(selected = selected, role = Role.RadioButton, onClick = { onSelect(i) }),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        label,
+                        color = if (selected) palette.textPrimary else palette.textSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
             }
         }
     }
 }
+
+private val SegmentTrackShape = RoundedCornerShape(10.dp)
+private val SegmentThumbShape = RoundedCornerShape(8.dp)
 
 // ---------------------------------------------------------------------------------------------
 // Botones
@@ -483,13 +512,14 @@ fun PillButton(
     icon: ImageVector? = null,
     destructive: Boolean = false,
     enabled: Boolean = true,
+    compact: Boolean = false,
 ) {
     val palette = uiPalette()
     val fg = if (destructive) palette.destructive else palette.accent
     Row(
         modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(if (compact) 40.dp else 48.dp)
             .background(palette.buttonFill, ControlShape)
             .clip(ControlClip)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -502,15 +532,16 @@ fun PillButton(
             Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text, color = fg, fontSize = if (compact) 14.sp else 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 /** Botón principal relleno con el color de acento (acción que avanza el proceso). */
 @Composable
-fun ProminentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun ProminentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, icon: ImageVector? = null) {
     val palette = uiPalette()
-    Box(
+    val fg = if (enabled) palette.onAccent else palette.disabledText
+    Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 50.dp)
@@ -518,11 +549,16 @@ fun ProminentButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
             .clip(ControlClip)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+        }
         Text(
             text,
-            color = if (enabled) palette.onAccent else palette.disabledText,
+            color = fg,
             fontSize = 16.sp,
             lineHeight = 20.sp,
             fontWeight = FontWeight.SemiBold,
@@ -577,20 +613,6 @@ fun GlassTabBar(backdrop: GlassBackdropState, modifier: Modifier = Modifier, con
     }
 }
 
-/** Burbuja de cristal (pestaña activa): relleno claro y filo especular diagonal, creados una vez por tamaño. */
-private fun Modifier.glassBubble(fill: Color, rimColor: Color): Modifier = drawWithCache {
-    val outline = Path().apply { addOutline(CapsuleShape.createOutline(size, layoutDirection, this@drawWithCache)) }
-    val rim = Brush.linearGradient(
-        0f to rimColor.copy(alpha = 0.34f), 0.5f to rimColor.copy(alpha = 0.05f), 1f to rimColor.copy(alpha = 0.16f),
-        start = Offset.Zero, end = Offset(size.width, size.height),
-    )
-    val stroke = Stroke(width = 1.dp.toPx())
-    onDrawBehind {
-        drawPath(outline, fill)
-        drawPath(outline, rim, style = stroke)
-    }
-}
-
 @Composable
 private fun BoxScope.GlassBarBackground(
     backdrop: GlassBackdropState,
@@ -603,8 +625,9 @@ private fun BoxScope.GlassBarBackground(
 }
 
 /**
- * Pestaña: la activa lleva una burbuja de cristal (relleno muy claro con su propio filo especular)
- * e icono y texto de acento; la inactiva va en gris. El cambio es instantáneo, como en iOS.
+ * Pestaña: la activa lleva una píldora compacta de 52 × 28 dp solo detrás del icono (como el
+ * indicador de Material 3) e icono y texto iluminados con el acento; nada se sale de la barra.
+ * La inactiva va en gris. El cambio es instantáneo, como en iOS.
  */
 @Composable
 fun RowScope.GlassTab(selected: Boolean, label: String, icon: ImageVector, onClick: () -> Unit) {
@@ -614,14 +637,20 @@ fun RowScope.GlassTab(selected: Boolean, label: String, icon: ImageVector, onCli
         Modifier
             .weight(1f)
             .fillMaxHeight()
-            .then(if (selected) Modifier.glassBubble(palette.tabActivePill, palette.tabPillRim) else Modifier)
             .clip(CapsuleShape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(3.dp))
+        Box(
+            Modifier
+                .size(width = 52.dp, height = 28.dp)
+                .then(if (selected) Modifier.background(palette.tabActivePill, CapsuleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.height(2.dp))
         Text(
             label,
             color = tint,

@@ -72,6 +72,7 @@ import com.opensky.virtuoso.ui.screens.AlignmentScreen
 import com.opensky.virtuoso.ui.screens.CatalogScreen
 import com.opensky.virtuoso.ui.screens.ControlScreen
 import com.opensky.virtuoso.ui.screens.HomeScreen
+import com.opensky.virtuoso.ui.screens.HomeStatusChip
 import com.opensky.virtuoso.ui.screens.MoreScreen
 import com.opensky.virtuoso.ui.screens.SensorScreen
 import com.opensky.virtuoso.ui.screens.SettingsScreen
@@ -233,8 +234,13 @@ private fun OpenSkyRoot(factory: androidx.lifecycle.ViewModelProvider.Factory) {
                 // se fija explícitamente (blanco con cristal, rojo en modo nocturno).
                 contentColor = MaterialTheme.colorScheme.onBackground,
                 topBar = {
-                    if (glass.enabled) LargeTitle(LARGE_TITLES[route] ?: TITLES[route] ?: "OpenSky")
-                    else TopAppBar(title = { Text(TITLES[route] ?: "OpenSky") })
+                    // En Inicio, a la derecha del título: indicador rápido del estado de la montura.
+                    val status: (@Composable () -> Unit)? = if (route == "home") ({ HomeStatusChip(homeVm) }) else null
+                    if (glass.enabled) LargeTitle(LARGE_TITLES[route] ?: TITLES[route] ?: "OpenSky", trailing = status)
+                    else TopAppBar(
+                        title = { Text(TITLES[route] ?: "OpenSky") },
+                        actions = { status?.let { Box(Modifier.padding(end = 12.dp)) { it() } } },
+                    )
                 },
                 snackbarHost = {
                     SnackbarHost(
