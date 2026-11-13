@@ -1,7 +1,9 @@
 package com.opensky.virtuoso.ui.components
 
+import android.graphics.RuntimeShader
 import android.os.Build
 import android.view.WindowManager
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,9 +34,11 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
@@ -58,6 +62,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindowProvider
+import com.opensky.virtuoso.control.Diagnostics
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.max
@@ -134,6 +139,9 @@ data class GlassStyle(val enabled: Boolean, val night: Boolean) {
     /** Sombra de la barra flotante. */
     val barShadow: GlassShadow get() = BarShadow
 
+    /** Óptica de la lente de la barra (Android 13+): tinte del 18 % y brillos blancos, o rojos de noche. */
+    val barLens: GlassLens get() = if (night) NightLens else DayLens
+
     /** Ventanas de diálogo (el sistema desenfoca la pantalla de atrás). */
     val dialog: GlassMaterial get() = if (night) NightDialog else DayDialog
 }
@@ -184,6 +192,12 @@ private val NightBar = GlassMaterial(
 private val NightDialog = NightCard.copy(base = Color(0xFF120000).copy(alpha = 0.86f))
 
 private val BarShadow = GlassShadow(Color.Black.copy(alpha = 0.40f), spread = 18.dp, offsetY = 8.dp)
+
+// Lente de día: exactamente la del shader de referencia (tinte 0.08/0.10/0.14 al 18 %, brillos blancos).
+private val DayLens = GlassLens(tint = Color(0.08f, 0.10f, 0.14f), tintAmount = 0.18f, light = Color.White)
+
+// Lente de noche: tinte casi negro y brillos rojo tenue (nada de blanco).
+private val NightLens = GlassLens(tint = Color(0.05f, 0f, 0f), tintAmount = 0.25f, light = Color(0.55f, 0.06f, 0.05f))
 
 val LocalGlass = staticCompositionLocalOf { GlassStyle(enabled = false, night = false) }
 
@@ -281,10 +295,15 @@ fun Modifier.liquidGlass(shape: Shape, material: GlassMaterial): Modifier = draw
 // la barra dibuja esa misma capa, reducida y desenfocada, detrás de su cristal.
 // ---------------------------------------------------------------------------------------------
 
-/** Contenido que se verá desenfocado detrás de la barra. */
+/**
+ * Contenido que se verá a través de la barra. Se graba UNA vez en la raíz de la app (fondo
+ * ambiental + todas las pantallas: Inicio, Mando manual, Alineación, Ajustes…), así que cualquier
+ * pantalla que se desplace queda conectada a la barra sin grabar nada más por pantalla.
+ */
 @Stable
 class GlassBackdropState internal constructor(internal val contentLayer: GraphicsLayer) {
     internal var sourceOffset by mutableStateOf(Offset.Zero)
+    internal var sourceSize by mutableStateOf(IntSize.Zero)
 }
 
 @Composable
@@ -300,18 +319,23 @@ fun rememberGlassBackdropState(): GlassBackdropState {
  * grabación no se repite).
  */
 fun Modifier.glassSource(state: GlassBackdropState): Modifier = this
-    .onGloballyPositioned { state.sourceOffset = it.positionInRoot() }
+    .onGloballyPositioned {
+        state.sourceOffset = it.positionInRoot()
+        state.sourceSize = it.size
+    }
     .drawWithContent {
         state.contentLayer.record { this@drawWithContent.drawContent() }
         drawLayer(state.contentLayer)
     }
 
-/** Capa de desenfoque, posición y sombra ya pintada de un panel de cristal. */
+/** Capa de la lente, posición, sombra ya pintada y shader (compilado una vez) de un panel de cristal. */
 @Stable
 class GlassPanelState internal constructor(internal val blurLayer: GraphicsLayer) {
     internal var offset by mutableStateOf(Offset.Zero)
     internal var shadowSize: Size = Size.Unspecified
     internal var shadowImage: ImageBitmap? = null
+    internal var lens: Any? = null          // LiquidLens (Android 13+), se crea una sola vez
+    internal var lensFailed = false         // si el shader no compila en este teléfono, desenfoque clásico
 }
 
 @Composable
@@ -320,15 +344,29 @@ fun rememberGlassPanelState(): GlassPanelState {
     return remember(layer) { GlassPanelState(layer) }
 }
 
-/** Escala a la que se graba y desenfoca lo que hay detrás de la barra (1/4: 16 veces menos píxeles). */
+/**
+ * Óptica de la lente de la barra: color y cantidad del tinte (muy poco: el fondo se ve claro) y
+ * color de los brillos (blanco; rojo tenue en modo nocturno).
+ */
+@Immutable
+data class GlassLens(val tint: Color, val tintAmount: Float, val light: Color)
+
+/** Escala a la que se graba y desenfoca lo que hay detrás de la barra en el modo clásico (1/4). */
 private const val BLUR_DOWNSAMPLE = 0.25f
 private const val SHADOW_STEPS = 8
 
+/** Ancho del bisel de la lente: las 26 unidades del diseño de referencia equivalen a 14 dp. */
+private val LENS_BEVEL = 14.dp
+
+/** Desenfoque de la lente: muy suave, para que lo de detrás se lea. */
+private val LENS_BLUR = 4.dp
+
 /**
- * Panel con desenfoque real de lo que pasa por detrás. Solo se procesa la franja del panel (más un
- * margen igual al radio, para que el borde no se vea cortado) y a 1/4 de resolución: con un
- * desenfoque tan amplio y el relleno al 82 %, la diferencia no se ve y la GPU trabaja 16 veces menos.
- * La sombra se pinta una sola vez en un mapa de bits y después solo se copia.
+ * Panel de cristal con lo que pasa por detrás. Con [lens] (Android 13+) es una lente de cristal
+ * líquido: centro casi transparente con desenfoque de 4 dp, lupa y menisco invertido en el bisel,
+ * aberración cromática, brillo Fresnel y filo especular (shader AGSL). Sin lente, o si el shader no
+ * compila, es el panel clásico: desenfoque amplio a 1/4 de resolución con relleno translúcido.
+ * Solo se procesa la franja del panel (más el margen justo); la sombra se pinta una sola vez.
  */
 fun Modifier.glassPanel(
     backdrop: GlassBackdropState,
@@ -336,43 +374,198 @@ fun Modifier.glassPanel(
     shape: Shape,
     material: GlassMaterial,
     shadow: GlassShadow?,
+    lens: GlassLens? = null,
     blurRadius: Dp = 24.dp,
 ): Modifier = this
     .onGloballyPositioned { panel.offset = it.positionInRoot() }
     .drawWithCache {
-        val k = BLUR_DOWNSAMPLE
-        val radius = blurRadius.toPx()
-        val pad = ceil(radius)
-        val layerSize = IntSize(
-            ceil((size.width + 2 * pad) * k).toInt().coerceAtLeast(1),
-            ceil((size.height + 2 * pad) * k).toInt().coerceAtLeast(1),
-        )
-        panel.blurLayer.renderEffect = BlurEffect(radius * k, radius * k, TileMode.Clamp)
         val outline = Path().apply { addOutline(shape.createOutline(size, layoutDirection, this@drawWithCache)) }
-        val surface = material.surfaceBrush(size)
-        val rim = material.rimBrush(size)
-        val stroke = Stroke(width = 1.dp.toPx())
         val shadowImage = shadow?.let { panelShadow(panel, shape, it) }
         val shadowTopLeft = shadow?.let { Offset(-it.spread.toPx(), -it.spread.toPx()) } ?: Offset.Zero
-        onDrawBehind {
-            // Sombra exterior: el desenfoque opaco de encima la tapa por dentro del panel.
-            shadowImage?.let { drawImage(it, topLeft = shadowTopLeft) }
-            // Lo que hay detrás de la barra, grabado a 1/4 de resolución (solo la franja del panel).
-            val rel = panel.offset - backdrop.sourceOffset
-            panel.blurLayer.record(size = layerSize) {
-                scale(k, k, pivot = Offset.Zero) {
-                    translate(left = -rel.x + pad, top = -rel.y + pad) { drawLayer(backdrop.contentLayer) }
+        val geometry = if (lens != null && !panel.lensFailed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            liquidLens(backdrop, panel, lens)
+        } else null
+
+        if (geometry != null) {
+            onDrawBehind {
+                // Sombra exterior: la lente es opaca por dentro y la tapa.
+                shadowImage?.let { drawImage(it, topLeft = shadowTopLeft) }
+                // Lo que hay detrás de la barra (y un margen para el menisco), a resolución completa.
+                val rel = panel.offset - backdrop.sourceOffset
+                panel.blurLayer.record(size = geometry.layerSize) {
+                    translate(left = -rel.x + geometry.left, top = -rel.y + geometry.top) { drawLayer(backdrop.contentLayer) }
+                }
+                clipPath(outline) {
+                    translate(left = -geometry.left, top = -geometry.top) { drawLayer(panel.blurLayer) }
                 }
             }
-            clipPath(outline) {
-                translate(left = -pad, top = -pad) {
-                    scale(1f / k, 1f / k, pivot = Offset.Zero) { drawLayer(panel.blurLayer) }
+        } else {
+            val k = BLUR_DOWNSAMPLE
+            val radius = blurRadius.toPx()
+            val pad = ceil(radius)
+            val layerSize = IntSize(
+                ceil((size.width + 2 * pad) * k).toInt().coerceAtLeast(1),
+                ceil((size.height + 2 * pad) * k).toInt().coerceAtLeast(1),
+            )
+            panel.blurLayer.renderEffect = BlurEffect(radius * k, radius * k, TileMode.Clamp)
+            val surface = material.surfaceBrush(size)
+            val rim = material.rimBrush(size)
+            val stroke = Stroke(width = 1.dp.toPx())
+            onDrawBehind {
+                shadowImage?.let { drawImage(it, topLeft = shadowTopLeft) }
+                val rel = panel.offset - backdrop.sourceOffset
+                panel.blurLayer.record(size = layerSize) {
+                    scale(k, k, pivot = Offset.Zero) {
+                        translate(left = -rel.x + pad, top = -rel.y + pad) { drawLayer(backdrop.contentLayer) }
+                    }
                 }
-                drawRect(surface)
+                clipPath(outline) {
+                    translate(left = -pad, top = -pad) {
+                        scale(1f / k, 1f / k, pivot = Offset.Zero) { drawLayer(panel.blurLayer) }
+                    }
+                    drawRect(surface)
+                }
+                drawPath(outline, rim, style = stroke)
             }
-            drawPath(outline, rim, style = stroke)
         }
     }
+
+/** Dónde cae la barra dentro de la capa de la lente y tamaño de esa capa. */
+private class LensGeometry(val left: Float, val top: Float, val layerSize: IntSize)
+
+/**
+ * Prepara la lente para el tamaño actual (solo aquí se tocan los uniforms: una vez por tamaño o
+ * posición, nunca por fotograma). Devuelve null si el shader no está disponible.
+ */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private fun CacheDrawScope.liquidLens(backdrop: GlassBackdropState, panel: GlassPanelState, optics: GlassLens): LensGeometry? {
+    val unit = LENS_BEVEL.toPx() / 26f
+    val blurPx = LENS_BLUR.toPx()
+    // Margen para el menisco (hasta 16 unidades hacia fuera), la aberración y el desenfoque.
+    val pad = ceil(16f * unit + 2.2f * unit + 2f * blurPx + 2f)
+    val rel = panel.offset - backdrop.sourceOffset
+    val source = backdrop.sourceSize
+    // Sin salirse de la pantalla: fuera de ella no hay imagen y los bordes se oscurecerían.
+    val left = min(pad, rel.x).coerceAtLeast(0f)
+    val top = min(pad, rel.y).coerceAtLeast(0f)
+    val right = if (source.width > 0) min(pad, source.width - rel.x - size.width).coerceAtLeast(0f) else pad
+    val bottom = if (source.height > 0) min(pad, source.height - rel.y - size.height).coerceAtLeast(0f) else pad
+    val layerSize = IntSize(
+        ceil(size.width + left + right).toInt().coerceAtLeast(1),
+        ceil(size.height + top + bottom).toInt().coerceAtLeast(1),
+    )
+    return try {
+        val shader = (panel.lens as? LiquidLens) ?: LiquidLens().also { panel.lens = it }
+        panel.blurLayer.renderEffect = shader.effect(
+            originX = left, originY = top,
+            width = size.width, height = size.height,
+            layerWidth = layerSize.width.toFloat(), layerHeight = layerSize.height.toFloat(),
+            cornerRadius = min(size.width, size.height) / 2f,
+            unit = unit, blurPx = blurPx, optics = optics,
+        )
+        LensGeometry(left, top, layerSize)
+    } catch (e: Exception) {
+        panel.lensFailed = true
+        Diagnostics.log("Lente de cristal (AGSL) no disponible, se usa el desenfoque clásico: ${e.message}")
+        null
+    }
+}
+
+/** Shader de la lente, compilado una sola vez por barra; solo se le cambian los uniforms. */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+private class LiquidLens {
+    private val shader = RuntimeShader(LIQUID_GLASS_AGSL)
+
+    fun effect(
+        originX: Float, originY: Float, width: Float, height: Float, layerWidth: Float, layerHeight: Float,
+        cornerRadius: Float, unit: Float, blurPx: Float, optics: GlassLens,
+    ): RenderEffect {
+        shader.setFloatUniform("origin", originX, originY)
+        shader.setFloatUniform("size", width, height)
+        shader.setFloatUniform("layerSize", layerWidth, layerHeight)
+        shader.setFloatUniform("cornerRadius", cornerRadius)
+        shader.setFloatUniform("unit", unit)
+        shader.setFloatUniform("tint", optics.tint.red, optics.tint.green, optics.tint.blue)
+        shader.setFloatUniform("tintAmount", optics.tintAmount)
+        shader.setFloatUniform("light", optics.light.red, optics.light.green, optics.light.blue)
+        // Primero el desenfoque suave y, sobre esa imagen, la refracción de la lente.
+        val refraction = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content")
+        val blur = android.graphics.RenderEffect.createBlurEffect(blurPx, blurPx, android.graphics.Shader.TileMode.CLAMP)
+        return android.graphics.RenderEffect.createChainEffect(refraction, blur).asComposeRenderEffect()
+    }
+}
+
+/**
+ * Lente de cristal líquido de iOS 26 (AGSL). Es el shader de referencia con tres adaptaciones:
+ * trabaja sobre una capa con margen alrededor de la barra (así el menisco del filo muestra, invertido,
+ * lo que hay justo fuera en vez de repetir el borde), las medidas en píxeles se escalan con la
+ * densidad de pantalla (26 unidades de bisel = 14 dp en cualquier teléfono) y el tinte y los brillos
+ * llegan como uniforms (blancos de día, rojos tenues de noche).
+ */
+private const val LIQUID_GLASS_AGSL = """
+uniform shader content;
+uniform float2 origin;
+uniform float2 size;
+uniform float2 layerSize;
+uniform float cornerRadius;
+uniform float unit;
+uniform float3 tint;
+uniform float tintAmount;
+uniform float3 light;
+
+float sdRoundedBox(float2 p, float2 b, float r) {
+    float2 q = abs(p) - b + r;
+    return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+half4 main(float2 fragCoord) {
+    float2 halfSize = size * 0.5;
+    float2 p = fragCoord - (origin + halfSize);
+    float r = min(cornerRadius, min(halfSize.x, halfSize.y));
+
+    // Distancia al borde (negativa dentro de la cápsula); 1 px de holgura para el borde suavizado.
+    float d = sdRoundedBox(p, halfSize, r);
+    if (d > 1.0) {
+        return half4(0.0);
+    }
+    float distFromEdge = max(-d, 0.0);
+    float bevelWidth = min(size.y * 0.38, 26.0 * unit);
+    float edgeFactor = clamp(1.0 - distFromEdge / bevelWidth, 0.0, 1.0);
+
+    // Normal hacia el borde más cercano (radial en los extremos de la cápsula).
+    float2 q = abs(p) - (halfSize - r);
+    float2 outer = max(q, 0.0);
+    float2 s = float2(p.x < 0.0 ? -1.0 : 1.0, p.y < 0.0 ? -1.0 : 1.0);
+    float2 normal = float2(0.0, s.y);
+    if (length(outer) > 0.001) {
+        normal = normalize(s * outer);
+    } else if (halfSize.x - abs(p.x) < halfSize.y - abs(p.y)) {
+        normal = float2(s.x, 0.0);
+    }
+
+    // Lente convexa que se invierte en los últimos píxeles del filo (menisco).
+    float lensPull = (edgeFactor * edgeFactor * 18.0 - pow(edgeFactor, 5.0) * 34.0) * unit;
+    float2 refracted = fragCoord - normal * lensPull;
+
+    // Aberración cromática sutil en el borde del cristal.
+    float2 chroma = normal * (edgeFactor * edgeFactor * 2.2 * unit);
+    float2 lo = float2(0.5);
+    float2 hi = layerSize - float2(0.5);
+    float red = content.eval(clamp(refracted + chroma, lo, hi)).r;
+    float green = content.eval(clamp(refracted, lo, hi)).g;
+    float blue = content.eval(clamp(refracted - chroma, lo, hi)).b;
+
+    // Tinte ultra transparente: deja ver el fondo claramente.
+    float3 glass = mix(float3(red, green, blue), tint, tintAmount);
+
+    // Bisel de volumen: brillo Fresnel interior, filo especular y luz de cilindro arriba y abajo.
+    float innerGlow = pow(edgeFactor, 2.6) * 0.28;
+    float rimHighlight = (1.0 - smoothstep(0.0, 2.2 * unit, distFromEdge)) * 0.65;
+    float verticalHighlight = pow(abs(p.y / halfSize.y), 3.0) * 0.14;
+    glass += light * (innerGlow + rimHighlight + verticalHighlight);
+    return half4(half3(glass), 1.0);
+}
+"""
 
 /** Pinta la sombra del panel en un mapa de bits (una vez por tamaño) con las mismas 8 capas de antes. */
 private fun CacheDrawScope.panelShadow(panel: GlassPanelState, shape: Shape, shadow: GlassShadow): ImageBitmap {
