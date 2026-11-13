@@ -1,5 +1,6 @@
 package com.opensky.virtuoso.ui.screens
 
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,7 +36,7 @@ fun UpdateScreen(vm: UpdateViewModel, snackbar: SnackbarHostState) {
     LaunchedEffect(Unit) { if (vm.state.value == UpdateState.Idle) vm.check() }
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         InfoCard("Versión instalada") {

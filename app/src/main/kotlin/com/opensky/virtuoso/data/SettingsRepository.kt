@@ -71,6 +71,10 @@ data class AppSettings(
     // Interfaz
     val nightMode: Boolean = true,
     val keepScreenOn: Boolean = true,
+    /** Efecto cristal (Liquid Glass) con el tema azul. Solo se aplica en Android 16 o superior. */
+    val glassDay: Boolean = true,
+    /** Efecto cristal con el modo nocturno rojo (apagado de fábrica: cuida batería y visión nocturna). */
+    val glassNight: Boolean = false,
     val padRateIndex: Int = 5,
     val padMode: PadMode = PadMode.ALT_AZ,
     val cometUrl: String = MpcParser.COMET_ELEMENTS_URL,
@@ -136,6 +140,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         val stEpoch = stringPreferencesKey("st_epoch")
         val night = booleanPreferencesKey("night")
         val screenOn = booleanPreferencesKey("screen_on")
+        val glassDay = booleanPreferencesKey("glass_day")
+        val glassNight = booleanPreferencesKey("glass_night")
         val padRate = intPreferencesKey("pad_rate")
         val padMode = stringPreferencesKey("pad_mode")
         val cometUrl = stringPreferencesKey("comet_url")
@@ -180,6 +186,8 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
             stellariumEpoch = enumOf(this[K.stEpoch], d.stellariumEpoch),
             nightMode = this[K.night] ?: d.nightMode,
             keepScreenOn = this[K.screenOn] ?: d.keepScreenOn,
+            glassDay = this[K.glassDay] ?: d.glassDay,
+            glassNight = this[K.glassNight] ?: d.glassNight,
             padRateIndex = this[K.padRate] ?: d.padRateIndex,
             padMode = enumOf(this[K.padMode], d.padMode),
             cometUrl = this[K.cometUrl] ?: d.cometUrl,
@@ -198,7 +206,7 @@ class SettingsRepository(context: Context, scope: CoroutineScope) {
         p[K.obsMode] = observingMode.name; p[K.eyepiece] = eyepieceId; p[K.barlow] = barlowFactor
         p[K.lxOn] = lx200Enabled; p[K.lxPort] = lx200Port; p[K.lxEpoch] = lx200Epoch.name
         p[K.stOn] = stellariumEnabled; p[K.stPort] = stellariumPort; p[K.stEpoch] = stellariumEpoch.name
-        p[K.night] = nightMode; p[K.screenOn] = keepScreenOn; p[K.padRate] = padRateIndex
+        p[K.night] = nightMode; p[K.screenOn] = keepScreenOn; p[K.glassDay] = glassDay; p[K.glassNight] = glassNight; p[K.padRate] = padRateIndex
         p[K.padMode] = padMode.name; p[K.cometUrl] = cometUrl
     }
 }

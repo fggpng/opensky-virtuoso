@@ -1,5 +1,8 @@
 package com.opensky.virtuoso.ui.screens
 
+import androidx.compose.foundation.layout.PaddingValues
+import com.opensky.virtuoso.ui.components.LocalBottomInset
+import com.opensky.virtuoso.ui.components.GlassAlertDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -13,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -83,7 +85,7 @@ fun TargetsScreen(vm: TargetsViewModel, snackbar: SnackbarHostState) {
             Button(onClick = { showUserDialog = true }) { Text("Añadir objeto (AR/Dec J2000)") }
         }
         if (busy) HintText("Trabajando…")
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
             items(rows, key = { it.target.id }) { row ->
                 TargetRowItem(row) { selected = row }
                 HorizontalDivider()
@@ -106,7 +108,7 @@ fun TargetsScreen(vm: TargetsViewModel, snackbar: SnackbarHostState) {
     }
 
     pending?.let { (target, reason) ->
-        AlertDialog(
+        GlassAlertDialog(
             onDismissRequest = { vm.dismissConfirmation() },
             title = { Text("⚠ Advertencia de seguridad") },
             text = { Text(reason) },
@@ -120,7 +122,7 @@ fun TargetsScreen(vm: TargetsViewModel, snackbar: SnackbarHostState) {
     }
     if (showJplDialog) {
         var text by remember { mutableStateOf("") }
-        AlertDialog(
+        GlassAlertDialog(
             onDismissRequest = { showJplDialog = false },
             title = { Text("Buscar en JPL Small-Body DB") },
             text = { OutlinedTextField(text, { text = it }, label = { Text("Ceres, 4, 2P, C/2023 A3…") }, singleLine = true) },
@@ -152,7 +154,7 @@ private fun TargetRowItem(row: TargetRow, onClick: () -> Unit) {
 @Composable
 private fun TargetDialog(row: TargetRow, onDismiss: () -> Unit, onGoto: () -> Unit, onSync: () -> Unit, onDelete: (() -> Unit)?) {
     val t: Target = row.target
-    AlertDialog(
+    GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(t.name) },
         text = {
@@ -186,7 +188,7 @@ private fun UserObjectDialog(onDismiss: () -> Unit, onSave: (String, String, Str
     var ra by remember { mutableStateOf("") }
     var dec by remember { mutableStateOf("") }
     var mag by remember { mutableStateOf("") }
-    AlertDialog(
+    GlassAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nuevo objeto de usuario") },
         text = {

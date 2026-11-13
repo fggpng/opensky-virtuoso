@@ -1,5 +1,8 @@
 package com.opensky.virtuoso.ui.screens
 
+import androidx.compose.ui.graphics.Color
+import com.opensky.virtuoso.ui.components.GlassSupport
+import com.opensky.virtuoso.ui.components.screenPadding
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -68,7 +71,7 @@ fun StellariumScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
     val message by vm.message.collectAsStateWithLifecycle()
     MessageEffect(message, snackbar, vm::clearMessage)
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         InfoCard("Servidores") {
             if (servers.isEmpty()) HintText("Se inician al conectar la montura.")
             servers.forEach { srv ->
@@ -108,7 +111,7 @@ fun CatalogScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.importCatalog(uris)
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         InfoCard("Tycho-2 (~2.5 millones de estrellas, V ≤ 11.5)") {
             when (val st = status) {
                 is CatalogStatus.NotInstalled -> HintText("No instalado. Las estrellas con nombre integradas funcionan sin él.")
@@ -137,7 +140,7 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
     MessageEffect(message, snackbar, vm::clearMessage)
     fun set(t: (AppSettings) -> AppSettings) { vm.update(t) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(screenPadding()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         InfoCard("Límites de seguridad") {
             DoubleField("Altura mínima (°)", s.minAltitudeDeg) { v -> set { it.copy(minAltitudeDeg = v.coerceIn(-10.0, 45.0)) } }
             DoubleField("Altura máxima (°)", s.maxAltitudeDeg) { v -> set { it.copy(maxAltitudeDeg = v.coerceIn(45.0, 90.0)) } }
@@ -190,6 +193,14 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
         InfoCard("Pantalla") {
             SettingSwitch("Modo nocturno rojo + brillo mínimo", s.nightMode) { v -> set { it.copy(nightMode = v) } }
             SettingSwitch("Mantener pantalla encendida", s.keepScreenOn) { v -> set { it.copy(keepScreenOn = v) } }
+            val glassOk = GlassSupport.available
+            SettingSwitch("Efecto cristal con el tema azul", s.glassDay && glassOk, enabled = glassOk) { v -> set { it.copy(glassDay = v) } }
+            SettingSwitch("Efecto cristal con el modo nocturno rojo", s.glassNight && glassOk, enabled = glassOk) { v -> set { it.copy(glassNight = v) } }
+            HintText(
+                if (glassOk) "Cristal estilo Liquid Glass: desenfoque real en la barra inferior y en las ventanas, y tarjetas translúcidas " +
+                    "sobre un fondo de cielo. Gasta un poco más de batería; de noche conserva el rojo y el brillo mínimo."
+                else "El efecto cristal requiere Android 16 o superior."
+            )
         }
         InfoCard("Datos") {
             TextSetting("URL de elementos de cometas (MPC)", s.cometUrl) { v -> set { it.copy(cometUrl = v.trim()) } }
@@ -203,10 +214,10 @@ fun SettingsScreen(vm: MoreViewModel, snackbar: SnackbarHostState) {
 }
 
 @Composable
-private fun SettingSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SettingSwitch(label: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Text(label, Modifier.weight(1f), color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }
 

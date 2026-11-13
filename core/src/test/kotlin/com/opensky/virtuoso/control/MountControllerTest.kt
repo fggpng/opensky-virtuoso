@@ -187,7 +187,9 @@ class MountControllerTest {
             controller.confirmHomePosition()
             alignment.begin(AlignmentMode.SYNMATRIX_AUTO)
             val polaris = catalog.search("Polaris").first()
-            assertTrue(controller.goto(polaris, trackAfter = true) is GotoResult.Success)
+            // Sin seguimiento: la prueba centra con órdenes directas a la montura y el lazo de seguimiento
+            // competiría por los motores (error «motor no detenido» intermitente).
+            assertTrue(controller.goto(polaris, trackAfter = false) is GotoResult.Success)
             val firstError = errorDeg(polaris)
             assertTrue("el primer GoTo debía caer muy lejos: $firstError°", firstError > 150)
 
