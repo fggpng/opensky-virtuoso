@@ -20,6 +20,7 @@ enum class AlignmentMode(val label: String, val starsRequired: Int, val descript
     ONE_STAR("1-Star Alignment", 1, "Centra una estrella elegida de la lista. Supone el trípode nivelado."),
     BRIGHTEST_ONE("Brightest Star (1 estrella)", 1, "Apunta a mano a la estrella más brillante de una zona; la app la identifica."),
     BRIGHTEST_TWO("Brightest Star (2 estrellas)", 2, "Como la anterior pero con dos estrellas: corrige la inclinación del trípode."),
+    MOON_ONE_STAR("Luna + 1 estrella", 2, "Primero la Luna, que se encuentra a simple vista; luego una estrella lejana que elige la app: corrige también la inclinación del trípode."),
     TWO_STAR("2-Star Alignment", 2, "Dos estrellas elegidas: rotación completa (trípode no nivelado) + índice de altura."),
     THREE_STAR("3-Star Alignment", 3, "Añade el error de cono y permite estimar el error residual."),
     SYNMATRIX_AUTO("SynMatrix AutoAlign", 4, "La app elige 4 estrellas bien repartidas, hace GoTo a cada una y reajusta tras cada centrado."),
@@ -34,6 +35,8 @@ data class AlignmentState(
     val allSamples: List<AlignmentSample> get() = alignmentSamples + syncSamples
     val isComplete: Boolean get() = mode != null && alignmentSamples.size >= mode.starsRequired
     val starsRemaining: Int get() = mode?.let { (it.starsRequired - alignmentSamples.size).coerceAtLeast(0) } ?: 0
+    /** Modo «Luna + 1 estrella» y todavía sin ningún punto: toca centrar la Luna. */
+    val isMoonStep: Boolean get() = mode == AlignmentMode.MOON_ONE_STAR && alignmentSamples.isEmpty()
     val model: PointingModel get() = fit.model
     val quality: AlignmentQuality get() = fit.quality
 }

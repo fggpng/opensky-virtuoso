@@ -123,6 +123,16 @@ object OpenSkyIcons {
         }
     }
 
+    /** Luna creciente (trazado de Feather Icons, licencia MIT). */
+    val Moon: ImageVector by lazy {
+        outline("Moon") {
+            moveTo(21f, 12.79f)
+            arcTo(9f, 9f, 0f, true, true, 11.21f, 3f)
+            arcTo(7f, 7f, 0f, false, false, 21f, 12.79f)
+            close()
+        }
+    }
+
     val Stop: ImageVector by lazy {
         icon("Stop") {
             path(fill = SolidColor(Color.White)) {

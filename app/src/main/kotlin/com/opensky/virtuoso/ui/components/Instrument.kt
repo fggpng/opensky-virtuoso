@@ -63,7 +63,7 @@ fun valueWithUnit(value: String, unit: String?): AnnotatedString {
         append(value)
         if (!unit.isNullOrEmpty()) {
             withStyle(SpanStyle(fontSize = unitSize, fontWeight = FontWeight.Medium, color = palette.textSecondary)) {
-                append(if (unit.startsWith("″") || unit.startsWith("′") || unit == "×") unit else " $unit")
+                append(if (unit.startsWith("″") || unit.startsWith("′") || unit == "×" || unit == "°") unit else " $unit")
             }
         }
     }
