@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.opensky.virtuoso.alignment.AlignmentMode
+import com.opensky.virtuoso.alignment.MoonReference
 import com.opensky.virtuoso.control.MountState
 import com.opensky.virtuoso.control.StartPosition
 import com.opensky.virtuoso.ui.components.GlassAlertDialog
@@ -41,6 +42,8 @@ import com.opensky.virtuoso.ui.components.PadOptions
 import com.opensky.virtuoso.ui.components.PillButton
 import com.opensky.virtuoso.ui.components.ProminentButton
 import com.opensky.virtuoso.ui.components.SelectableRow
+import com.opensky.virtuoso.ui.components.Stat
+import com.opensky.virtuoso.ui.components.StatGrid
 import com.opensky.virtuoso.ui.components.StatusPill
 import com.opensky.virtuoso.ui.components.StatusTone
 import com.opensky.virtuoso.ui.components.TintButton
@@ -78,6 +81,7 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
     val message by vm.message.collectAsStateWithLifecycle()
     val padMessage by pad.message.collectAsStateWithLifecycle()
     val doubtful by vm.doubtful.collectAsStateWithLifecycle()
+    val moon by vm.moon.collectAsStateWithLifecycle()
     doubtful?.let { d ->
         GlassAlertDialog(
             onDismissRequest = { vm.dismissDoubtful() },
@@ -139,8 +143,11 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
 
         state.mode?.let { mode ->
             val brightest = mode == AlignmentMode.BRIGHTEST_ONE || mode == AlignmentMode.BRIGHTEST_TWO
+            val moonMode = mode == AlignmentMode.MOON_ONE_STAR
+            val moonStep = state.isMoonStep
             val done = state.alignmentSamples.size
-            GroupedSection("Progreso: $done/${mode.starsRequired} estrellas", contentPadding = PaddingValues(0.dp), spacing = 0.dp) {
+            val title = if (moonMode) "Progreso: $done/2 · Luna + estrella" else "Progreso: $done/${mode.starsRequired} estrellas"
+            GroupedSection(title, contentPadding = PaddingValues(0.dp), spacing = 0.dp) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     LinearProgressIndicator(
                         progress = { (done.toFloat() / mode.starsRequired).coerceIn(0f, 1f) },
@@ -152,6 +159,8 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
                     if (busy) HintText("Moviendo la montura…")
                     if (state.isComplete) {
                         Text("✓ Alineación completa", color = palette.success, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    } else if (moonStep) {
+                        MoonStep(moon)
                     } else if (brightest) {
                         HintText("Apunta a mano (pad) a la estrella más brillante de la zona del cielo que elijas y pulsa Identificar.")
                         PillButton("Identificar estrella", onClick = { vm.identifyBrightest() }, icon = OpenSkyIcons.Target)
@@ -166,12 +175,18 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
                             HintText("Céntrala con el pad y confirma.")
                         }
                     } else {
-                        Text("Estrellas sugeridas", color = palette.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                        HintText("Bien repartidas, entre 20° y 75° de altura. Toca una para elegirla o pulsa GoTo.")
+                        Text(
+                            if (moonMode) "Paso 2 · una estrella lejana" else "Estrellas sugeridas",
+                            color = palette.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        HintText(
+                            if (moonMode) "Las de la lista están lejos de la Luna: con una de ellas la app mide la inclinación del trípode. Toca una para elegirla o pulsa GoTo."
+                            else "Bien repartidas, entre 20° y 75° de altura. Toca una para elegirla o pulsa GoTo."
+                        )
                     }
                 }
                 if (!state.isComplete) {
-                    if (!brightest && suggestions.isNotEmpty()) {
+                    if (!brightest && !moonStep && suggestions.isNotEmpty()) {
                         InsetDivider(startInset = 0.dp)
                         Column(Modifier.selectableGroup()) {
                             suggestions.forEachIndexed { i, (star, hz) ->
@@ -188,13 +203,28 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
                     }
                     InsetDivider(startInset = 0.dp)
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (!brightest) PillButton("Actualizar lista", onClick = { vm.refreshSuggestions() }, icon = OpenSkyIcons.Refresh)
+                        val moonReady = moon?.usable == true
+                        when {
+                            moonStep -> PillButton("GoTo a la Luna", onClick = { vm.gotoMoon() }, icon = OpenSkyIcons.Moon, enabled = !busy && moonReady)
+                            !brightest -> PillButton("Actualizar lista", onClick = { vm.refreshSuggestions() }, icon = OpenSkyIcons.Refresh)
+                        }
                         val setup = settings.opticalSetup()
-                        HintText("Centra la estrella ${setup.centeringHint}.")
+                        HintText(
+                            if (moonStep) "Centra el disco entero de la Luna ${setup.centeringHint}: imagina el círculo completo, no solo la parte iluminada."
+                            else "Centra la estrella ${setup.centeringHint}."
+                        )
                         ProminentButton(
-                            text = if (setup.usesCamera) "Estrella centrada en la cámara ✓" else "Estrella centrada en el ocular ✓",
+                            text = when {
+                                moonStep -> if (setup.usesCamera) "Luna centrada en la cámara ✓" else "Luna centrada en el ocular ✓"
+                                setup.usesCamera -> "Estrella centrada en la cámara ✓"
+                                else -> "Estrella centrada en el ocular ✓"
+                            },
                             onClick = { vm.confirmCentered() },
-                            enabled = !busy && (if (brightest) identified != null else current != null),
+                            enabled = !busy && when {
+                                moonStep -> moonReady
+                                brightest -> identified != null
+                                else -> current != null
+                            },
                         )
                     }
                 }
@@ -227,3 +257,29 @@ fun AlignmentScreen(vm: AlignmentViewModel, pad: ControlViewModel, snackbar: Sna
         }
     }
 }
+
+/**
+ * Paso 1 del modo «Luna + 1 estrella»: dónde está la Luna ahora, o por qué no se puede usar
+ * (bajo el horizonte, muy baja, cerca del cenit o luna nueva).
+ */
+@Composable
+private fun MoonStep(moon: MoonReference?) {
+    val palette = uiPalette()
+    Text("Paso 1 · la Luna", color = palette.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+    when {
+        moon == null -> HintText("Calculando dónde está la Luna…")
+        !moon.usable -> StatusPill(moon.unavailableReason ?: "La Luna no se puede usar ahora.", tone = StatusTone.Caution, icon = OpenSkyIcons.Moon)
+        else -> {
+            val hz = moon.horizontal!!
+            StatGrid(
+                listOf(
+                    Stat("Altura", "%.0f".format(hz.altDeg), "°"),
+                    Stat("Acimut", "%.0f".format(hz.azDeg), "°", com.opensky.virtuoso.control.ManualHeading.cardinalName(hz.azDeg)),
+                    Stat("Iluminada", "%.0f".format(moon.illuminatedPercent ?: 0.0), "%"),
+                ),
+            )
+            HintText("Se ve a simple vista: aunque el GoTo no la deje en el ocular por el error de la brújula, búscala a ojo y llévala al centro con el pad.")
+        }
+    }
+}
+

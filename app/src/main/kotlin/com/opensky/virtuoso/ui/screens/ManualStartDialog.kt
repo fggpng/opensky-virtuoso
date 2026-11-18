@@ -138,6 +138,6 @@ private fun ManualStartSummary(p: ManualStartPreview) {
             }
             if (p.phoneInterference) HintText("El teléfono detecta interferencia magnética: su brújula puede estar desviada por el metal del tubo.")
         }
-        HintText("Al aceptar se borra la alineación anterior. Después alinea con estrellas para afinar la precisión.")
+        HintText("Al aceptar se borra la alineación anterior. Después afina en Alinear: con estrellas o con «Luna + 1 estrella», si la Luna está a la vista.")
     }
 }

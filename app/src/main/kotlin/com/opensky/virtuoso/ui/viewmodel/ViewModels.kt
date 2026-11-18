@@ -13,12 +13,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.opensky.virtuoso.alignment.AlignmentMode
+import com.opensky.virtuoso.alignment.MoonAlignment
+import com.opensky.virtuoso.alignment.MoonReference
 import com.opensky.virtuoso.astronomy.EarthOrientation
 import com.opensky.virtuoso.astronomy.HorizontalCoord
 import com.opensky.virtuoso.astronomy.math.Angles
 import com.opensky.virtuoso.astronomy.math.HOUR
 import com.opensky.virtuoso.control.FieldRotation
 import com.opensky.virtuoso.control.GotoResult
+import com.opensky.virtuoso.control.MountController
 import com.opensky.virtuoso.control.MountState
 import com.opensky.virtuoso.control.PadDirection
 import com.opensky.virtuoso.control.PadMode
@@ -43,6 +46,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -316,6 +320,33 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
     val doubtful: StateFlow<DoubtfulStar?> = _doubtful.asStateFlow()
     fun dismissDoubtful() { _doubtful.value = null }
 
+    /**
+     * La Luna ahora, solo mientras toca centrarla (modo «Luna + 1 estrella» sin puntos); se recalcula
+     * cada 15 s para que la altura y el aviso de «muy baja» estén al día.
+     */
+    val moon: StateFlow<MoonReference?> = combine(alignment.map { it.isMoonStep }.distinctUntilChanged(), ticker(15_000)) { step, _ ->
+        if (step) moonNow() else null
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private fun moonNow(): MoonReference {
+        val site = c.session.siteOrNull() ?: return MoonReference.unavailable("Falta la ubicación (GPS o manual) para saber dónde está la Luna.")
+        return MoonAlignment.reference(c.clock.now(), site.location, site.weather)
+    }
+
+    /** GoTo a la Luna (primer punto del modo «Luna + 1 estrella»). */
+    fun gotoMoon() = viewModelScope.launch {
+        val ctrl = requireController() ?: return@launch
+        val ref = moonNow()
+        if (!ref.usable) { _message.value = ref.unavailableReason; return@launch }
+        _busy.value = true
+        try {
+            val r = ctrl.goto(MoonAlignment.target, trackAfter = true)
+            _message.value = if (r is GotoResult.Success) {
+                "Si no ves la Luna en el ocular, búscala a simple vista y llévala al centro con el pad; luego pulsa «Luna centrada ✓»"
+            } else describe(r)
+        } finally { _busy.value = false }
+    }
+
     fun begin(mode: AlignmentMode) {
         c.alignment.begin(mode)
         _current.value = null; _identified.value = null
@@ -369,6 +400,10 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
      */
     fun confirmCentered(force: Boolean = false) = viewModelScope.launch {
         val ctrl = requireController() ?: return@launch
+        if (alignment.value.isMoonStep) {
+            confirmMoon(ctrl)
+            return@launch
+        }
         val star = if (isBrightestMode) _identified.value?.first else _current.value
         if (star == null) { _message.value = if (isBrightestMode) "Primero pulsa «Identificar»" else "Elige una estrella"; return@launch }
         _doubtful.value = null
@@ -389,6 +424,27 @@ class AlignmentViewModel(c: AppContainer) : MountAwareViewModel(c) {
                 "Alineación completa. " + (q.rmsArcmin?.let { "Error RMS %.1f′ · precisión %.1f %%".format(it, q.precisionPercent ?: 0.0) } ?: q.method)
             } else "Estrella ${state.alignmentSamples.size} registrada. Faltan ${state.starsRemaining}."
             if (!state.isComplete && state.mode == AlignmentMode.SYNMATRIX_AUTO) gotoNextSuggested() else refreshSuggestions()
+        } catch (e: Exception) {
+            _message.value = "Error al sincronizar: ${e.message}"
+        } finally { _busy.value = false }
+    }
+
+    /**
+     * Primer punto del modo «Luna + 1 estrella». Sin el aviso de «¿seguro que es…?»: la Luna no se
+     * confunde con nada. El desvío respecto a donde la esperaba la app solo se informa: es justo el
+     * error del arranque (la brújula) que este punto corrige.
+     */
+    private suspend fun confirmMoon(ctrl: MountController) {
+        val ref = moonNow()
+        if (!ref.usable) { _message.value = ref.unavailableReason; return }
+        _busy.value = true
+        try {
+            val dev = runCatching { ctrl.syncDeviationDeg(MoonAlignment.target) }.getOrNull()
+            ctrl.sync(MoonAlignment.target, asAlignmentStar = true)
+            _current.value = null
+            _message.value = "Luna registrada" + (dev?.let { " (estaba a %.1f° de donde la esperaba la app)".format(it) } ?: "") +
+                ". Ahora una estrella lejos de la Luna: elígela en la lista."
+            refreshSuggestions()
         } catch (e: Exception) {
             _message.value = "Error al sincronizar: ${e.message}"
         } finally { _busy.value = false }
