@@ -1,0 +1,97 @@
+# Proyecto de Xcode de la app de iOS (se genera en CI con XcodeGen: `xcodegen generate`).
+# El núcleo en Kotlin llega como OpenSkyCore.xcframework (./gradlew :core:assembleOpenSkyCoreReleaseXCFramework).
+name: OpenSky
+options:
+  bundleIdPrefix: com.opensky
+  deploymentTarget:
+    iOS: "27.0"
+  createIntermediateGroups: true
+  developmentLanguage: es
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    DEVELOPMENT_TEAM: ""
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    ENABLE_BITCODE: NO
+    DEAD_CODE_STRIPPING: YES
+targets:
+  OpenSky:
+    type: application
+    platform: iOS
+    sources:
+      - path: OpenSky
+      - path: Shared
+    dependencies:
+      - framework: ../core/build/XCFrameworks/release/OpenSkyCore.xcframework
+        embed: false
+      - target: OpenSkyWidgets
+        embed: true
+    info:
+      path: OpenSky/Info.plist
+      properties:
+        CFBundleDisplayName: OpenSky
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: es
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIRequiredDeviceCapabilities: [arm64]
+        UIBackgroundModes: [location]
+        NSSupportsLiveActivities: true
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        ITSAppUsesNonExemptEncryption: false
+        NSLocationWhenInUseUsageDescription: "La ubicación da la latitud y longitud del sitio: sin ellas la app no sabe dónde está cada estrella. Con la montura conectada también mantiene la sesión activa con la pantalla bloqueada."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "La ubicación da el sitio de observación y mantiene activa la sesión con la montura con la pantalla bloqueada."
+        NSLocalNetworkUsageDescription: "La app habla con la montura Virtuoso GTi por su Wi-Fi (192.168.4.1) y deja que Stellarium o SkySafari la controlen desde otro equipo de la misma red."
+        NSMotionUsageDescription: "Los sensores del iPhone apoyado en el tubo miden hacia dónde apunta el telescopio."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.opensky.virtuoso
+        PRODUCT_NAME: OpenSky
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: APP_TARGET
+        OTHER_LDFLAGS: ["$(inherited)", "-lc++", "-lz"]
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+  OpenSkyWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OpenSkyWidgets
+      - path: Shared
+    info:
+      path: OpenSkyWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: OpenSky
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.opensky.virtuoso.widgets
+        PRODUCT_NAME: OpenSkyWidgets
+        SKIP_INSTALL: YES
+schemes:
+  OpenSky:
+    build:
+      targets:
+        OpenSky: all
+        OpenSkyWidgets: all
+    run:
+      config: Debug
+    archive:
+      config: Release

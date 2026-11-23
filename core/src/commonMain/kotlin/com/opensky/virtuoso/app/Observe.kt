@@ -2,6 +2,8 @@ package com.opensky.virtuoso.app
 
 import com.opensky.virtuoso.platform.epochMillisNow
 import com.opensky.virtuoso.platform.uiDispatcher
+import kotlin.concurrent.Volatile
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -24,12 +26,16 @@ class StateWatcher<T : Any>(private val flow: StateFlow<T>) {
 
     /** Llama a [onChange] con el valor actual y con cada cambio, hasta [Watch.cancel]. */
     fun watch(onChange: (T) -> Unit): Watch {
-        val job = watchScope.launch(uiDispatcher) { flow.collect { onChange(it) } }
+        val job = watchScope.launch(dispatcherOverride ?: uiDispatcher) { flow.collect { onChange(it) } }
         return Watch(job)
     }
 
-    private companion object {
+    internal companion object {
         val watchScope = CoroutineScope(SupervisorJob())
+
+        /** Solo pruebas: en un binario de pruebas nativo el hilo principal está ocupado por runBlocking. */
+        @Volatile
+        var dispatcherOverride: CoroutineDispatcher? = null
     }
 }
 

@@ -722,7 +722,8 @@ class ControlModel internal constructor(g: AppGraph) : ScreenModel(g) {
     /** Serializa pulsar/soltar: el «soltar» nunca puede adelantarse al «pulsar». */
     private val padMutex = Mutex()
 
-    fun press(direction: PadDirection) {
+    /** Flecha del mando pulsada (en Swift `release` chocaría con NSObject: por eso «Pad»). */
+    fun pressPad(direction: PadDirection) {
         scope.launch {
             padMutex.withLock {
                 val ctrl = requireController() ?: return@withLock
@@ -733,7 +734,7 @@ class ControlModel internal constructor(g: AppGraph) : ScreenModel(g) {
         }
     }
 
-    fun release() {
+    fun releasePad() {
         scope.launch {
             padMutex.withLock {
                 Diagnostics.log("PAD soltado")
@@ -887,3 +888,6 @@ fun localTimeLabel(epochMillis: Long): String =
 
 /** Ahora en ms (para la UI de Swift sin importar Foundation en los modelos). */
 fun nowMillis(): Long = epochMillisNow()
+
+/** Descripción del modo (en Swift `description` choca con NSObject). */
+val com.opensky.virtuoso.alignment.AlignmentMode.details: String get() = description

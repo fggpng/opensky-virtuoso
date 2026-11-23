@@ -228,11 +228,13 @@ class AppLayerTest {
     @Test fun watcherDeliversCurrentAndUpdates() = runBlocking {
         val (g, _) = graph()
         try {
-            val seen = mutableListOf<Int>()
+            StateWatcher.dispatcherOverride = kotlinx.coroutines.Dispatchers.Unconfined
+            val seen = com.opensky.virtuoso.testing.SyncList<Int>()
             val w = g.control.state.watch { seen += it.padRateIndex }
             g.control.setRate(2)
-            waitFor { seen.lastOrNull() == 2 }
+            waitFor { seen.isNotEmpty() && seen.last() == 2 }
             w.cancel()
+            StateWatcher.dispatcherOverride = null
             assertNotNull(g.control.state.value)
             assertEquals(isoMillis("2026-01-01T00:00:00Z") > 0, true)
         } finally {

@@ -1,9 +1,11 @@
-# Núcleo para iOS en un Mac de GitHub: pruebas nativas (macOS arm64, mismo código que en el
-# iPhone) y el framework OpenSkyCore.xcframework que usa la app de SwiftUI.
+# App de iOS en un Mac de GitHub (ramas de trabajo): pruebas nativas del núcleo, framework
+# OpenSkyCore y OpenSky.ipa sin firmar como artefacto para probarla antes de publicarla.
+# En main la compila y la publica el flujo «Compilar y publicar APK» junto al APK.
 name: iOS
 
 on:
   push:
+    branches-ignore: [main]
     paths-ignore: ["**.md", "docs/**"]
   workflow_dispatch:
 
@@ -12,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  core:
+  ios:
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -30,20 +32,20 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
-      - name: Pruebas del núcleo en nativo y framework para iOS
-        run: >
-          ./gradlew --no-daemon --stacktrace -Popensky.skipAndroid=true
-          :core:macosArm64Test :core:assembleOpenSkyCoreReleaseXCFramework
+      - name: Núcleo, proyecto de Xcode e IPA
+        run: ios/scripts/build-ipa.sh ${{ github.run_number }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OpenSkyCore.xcframework
-          path: core/build/XCFrameworks/release/OpenSkyCore.xcframework
+          name: OpenSky-ipa
+          path: build/OpenSky.ipa
 
       - name: Guardar informes si algo falla
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: informes-ios
-          path: core/build/reports/
+          path: |
+            core/build/reports/
+            build/xcodebuild.log
           if-no-files-found: ignore

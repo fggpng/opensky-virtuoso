@@ -14,3 +14,8 @@
 *.jks
 *.keystore
 secretos*.txt
+
+# Proyecto de Xcode y Info.plist: los genera XcodeGen (ios/project.yml)
+ios/OpenSky.xcodeproj/
+ios/OpenSky/Info.plist
+ios/OpenSkyWidgets/Info.plist
