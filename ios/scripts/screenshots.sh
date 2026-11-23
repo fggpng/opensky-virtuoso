@@ -9,8 +9,13 @@ BUNDLE=com.opensky.virtuoso
 
 xcodebuild -project ios/OpenSky.xcodeproj -scheme OpenSky -configuration Debug \
   -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/sim \
+  ARCHS=arm64 EXCLUDED_ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO \
   CODE_SIGNING_ALLOWED=NO build > build/xcodebuild-sim.log 2>&1
-grep -q "BUILD SUCCEEDED" build/xcodebuild-sim.log || { echo "Falló la compilación para el simulador"; grep -E "error:" build/xcodebuild-sim.log | head -40; exit 1; }
+grep -q "BUILD SUCCEEDED" build/xcodebuild-sim.log || {
+  echo "Falló la compilación para el simulador"
+  grep -E "error:|Undefined symbol|ld: |referenced from|warning: ignoring file" build/xcodebuild-sim.log | head -60
+  exit 1
+}
 APP=build/sim/Build/Products/Debug-iphonesimulator/OpenSky.app
 
 RUNTIME=$(xcrun simctl list runtimes -j | python3 -c "
