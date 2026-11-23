@@ -33,7 +33,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Pruebas del núcleo (astronomía, protocolo, alineación, simulador)
-        run: ./gradlew --no-daemon --stacktrace :core:test
+        run: ./gradlew --no-daemon --stacktrace :core:jvmTest
 
       - name: Preparar la clave de firma
         env:
@@ -78,4 +78,43 @@ jobs:
           path: |
             core/build/reports/
             app/build/reports/
+          if-no-files-found: ignore
+
+  # La misma versión para iOS: OpenSky.ipa sin firmar en la misma release (se instala con
+  # Sideloadly o SideStore y un Apple ID gratuito; ver docs/instalar-en-iphone.md).
+  ios:
+    needs: release
+    runs-on: xcode-27
+    timeout-minutes: 75
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Núcleo, proyecto de Xcode e IPA
+        run: ios/scripts/build-ipa.sh "$VERSION_CODE"
+
+      - name: Añadir la IPA a la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OUT="opensky-virtuoso-${VERSION_CODE}.ipa"
+          cp build/OpenSky.ipa "$OUT"
+          gh release upload "v1.0.${VERSION_CODE}" "$OUT" --clobber
+
+      - name: Guardar informes si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informes-ios
+          path: |
+            core/build/reports/
+            build/xcodebuild.log
           if-no-files-found: ignore
