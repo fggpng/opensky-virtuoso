@@ -6,6 +6,7 @@ import SwiftUI
 struct ManualStartSheet: View {
     @Environment(AppHost.self) private var host
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.nightMode) private var night
     @State private var azText = ""
     @State private var referenceIndex = 0
     @State private var measure = true
@@ -29,6 +30,7 @@ struct ManualStartSheet: View {
                                 Text(ref.label).tag(index)
                             }
                         }
+                        .nightAwarePickerStyle(night)
                         Toggle("Medir la altura con el teléfono apoyado en el tubo", isOn: $measure)
                     } header: {
                         Text("Hacia dónde apunta el tubo")
@@ -53,6 +55,7 @@ struct ManualStartSheet: View {
                     }
                 }
             }
+            .keyboardDoneButton()
             .navigationTitle("Escribir la posición")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -70,14 +73,14 @@ struct ManualStartSheet: View {
     @ViewBuilder private func preview(_ p: ManualStartPreview) -> some View {
         let model = host.graph.home
         Section {
-            LabeledContent("Escrito", value: String(format: "%.1f° (%@)", p.inputAzDeg, p.reference.northName))
+            LabeledContent("Escrito", value: "\(azimuthText(p.inputAzDeg, decimals: 1)) (\(p.reference.northName))")
             if let d = p.declinationDeg.double, p.reference == HeadingReference.magnetic {
-                LabeledContent("Declinación", value: String(format: "%+.1f°", d))
+                LabeledContent("Declinación", value: signedDeg(d, decimals: 1))
             }
-            LabeledContent("Acimut verdadero", value: String(format: "%.1f° (%@)", p.trueAzDeg, cardinal(p.trueAzDeg)))
-            LabeledContent("Altura", value: String(format: "%.1f° %@", p.altDeg, p.altitudeMeasured ? "(medida)" : "(horizontal)"))
+            LabeledContent("Acimut verdadero", value: "\(azimuthText(p.trueAzDeg, decimals: 1)) (\(cardinal(p.trueAzDeg)))")
+            LabeledContent("Altura", value: "\(deg(p.altDeg)) \(p.altitudeMeasured ? "(medida)" : "(horizontal)")")
             if let phone = p.phoneAzDeg.double {
-                LabeledContent("Brújula del teléfono", value: String(format: "%.0f°", phone))
+                LabeledContent("Brújula del teléfono", value: azimuthText(phone))
                 if let diff = p.phoneDisagreementDeg.double {
                     LabeledContent("Diferencia", value: String(format: "%.0f°", diff))
                 }

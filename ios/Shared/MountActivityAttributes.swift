@@ -14,6 +14,8 @@ struct MountActivityAttributes: ActivityAttributes {
         var azimuthDeg: Double?
         var moving: Bool
         var alert: String?
+        /// Modo nocturno de la app: la Live Activity también se dibuja en rojo.
+        var night: Bool
     }
 
     var mountName: String
@@ -22,7 +24,11 @@ struct MountActivityAttributes: ActivityAttributes {
 extension MountActivityAttributes.ContentState {
     /// «Alt 42.1° · Az 128°» o nil sin posición.
     var positionText: String? {
-        guard let alt = altitudeDeg, let az = azimuthDeg else { return nil }
-        return String(format: "Alt %.1f° · Az %.0f°", alt, az)
+        guard let alt = altitudeDeg, let az = azimuthDeg, alt.isFinite, az.isFinite else { return nil }
+        var azRounded = az.rounded().truncatingRemainder(dividingBy: 360)
+        if azRounded < 0 { azRounded += 360 }
+        if azRounded == 0 || azRounded >= 360 { azRounded = 0 }
+        let altRounded = (alt * 10).rounded() / 10
+        return String(format: "Alt %.1f° · Az %.0f°", altRounded == 0 ? 0 : altRounded, azRounded)
     }
 }

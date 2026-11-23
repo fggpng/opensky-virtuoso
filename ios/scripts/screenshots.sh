@@ -64,8 +64,15 @@ shot alinear --demo --tab=align
 shot objetivos --demo --tab=targets
 shot mando --demo --tab=control
 shot mas --demo --tab=more
+shot objetivo --demo --screen=target
+shot ajustes --demo --screen=settings
+shot stellarium --demo --screen=stellarium
+shot sensores --demo --screen=sensor
+shot manual --demo --screen=manual
 shot inicio-noche --demo --night --tab=home
 shot mando-noche --demo --night --tab=control
+shot objetivos-noche --demo --night --tab=targets
+shot mas-noche --demo --night --tab=more
 
 echo "===REGISTRO==="
 xcrun simctl spawn "$UDID" log show --last 5m --style compact --predicate 'process == "OpenSky" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "kotlin" OR eventMessage CONTAINS[c] "exception")' 2>/dev/null | tail -60

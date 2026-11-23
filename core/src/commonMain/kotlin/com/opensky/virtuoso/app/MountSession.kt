@@ -46,7 +46,7 @@ data class ServerInfo(val name: String, val port: Int, val running: Boolean, val
 /**
  * Ciclo de vida de una sesión con la montura: transporte → [MountClient] → [MountController] →
  * servidores LX200/Stellarium. Versión común (iOS) de TelescopeSession de Android, sin la parte
- * de Wi-Fi: en iOS el usuario une el iPhone a la red de la montura en Ajustes.
+ * de Wi-Fi: en iOS el usuario une el iPhone a la red de la montura en Configuración › Wi-Fi.
  */
 class MountSession(
     private val scope: CoroutineScope,
@@ -120,10 +120,10 @@ class MountSession(
         return when {
             e is MountTimeoutException || raw.contains("respuesta", ignoreCase = true) ->
                 "La montura no responde en ${s.mountHost}:${s.mountPort}. Une el iPhone a la Wi-Fi «${s.ssidPrefix}…» en " +
-                    "Ajustes › Wi-Fi (aunque diga «Sin conexión a Internet») y vuelve a intentarlo."
+                    "Configuración › Wi-Fi (aunque diga «Sin conexión a Internet») y vuelve a intentarlo."
             raw.contains("No route to host", ignoreCase = true) || raw.contains("not permitted", ignoreCase = true) ||
                 raw.contains("denied", ignoreCase = true) ->
-                "iOS bloqueó la red local. Activa «Red local» para OpenSky en Ajustes › Privacidad y seguridad › Red local."
+                "iOS bloqueó la red local. Activa «Red local» para OpenSky en Configuración › Privacidad y seguridad › Red local."
             else -> raw
         }
     }

@@ -80,7 +80,7 @@ struct AlignmentView: View {
                 if moon.usable, let h = moon.horizontal {
                     StatGrid(stats: [
                         Stat(label: "Altura", value: deg(h.altDeg)),
-                        Stat(label: "Acimut", value: deg(h.azDeg, decimals: 0), detail: cardinal(h.azDeg)),
+                        Stat(label: "Acimut", value: azimuthText(h.azDeg), detail: cardinal(h.azDeg)),
                         Stat(label: "Iluminada", value: moon.illuminatedPercent.double.map { String(format: "%.0f %%", $0) } ?? "—"),
                     ])
                 } else if let reason = moon.unavailableReason {
@@ -136,8 +136,8 @@ struct AlignmentView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text(String(format: "Alt %.0f°", sug.horizontal.altDeg)).monospacedDigit()
-                            Text(String(format: "Az %.0f° %@", sug.horizontal.azDeg, cardinal(sug.horizontal.azDeg)))
+                            Text("Alt " + deg(sug.horizontal.altDeg, decimals: 0)).monospacedDigit()
+                            Text("Az \(azimuthText(sug.horizontal.azDeg)) \(cardinal(sug.horizontal.azDeg))")
                                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         }
                         if s.current?.id == sug.star.id {
@@ -164,10 +164,10 @@ struct AlignmentView: View {
     @ViewBuilder private func samples(_ a: AlignmentState) -> some View {
         Section("Puntos registrados") {
             ForEach(Array(a.alignmentSamples.enumerated()), id: \.offset) { _, sample in
-                LabeledContent(sample.name, value: String(format: "Alt %.1f° · Az %.1f°", sample.sky.altDeg, sample.sky.azDeg))
+                LabeledContent(sample.name, value: "Alt \(deg(sample.sky.altDeg)) · Az \(azimuthText(sample.sky.azDeg, decimals: 1))")
             }
             ForEach(Array(a.syncSamples.enumerated()), id: \.offset) { _, sample in
-                LabeledContent("Sync · \(sample.name)", value: String(format: "Alt %.1f°", sample.sky.altDeg))
+                LabeledContent("Sync · \(sample.name)", value: "Alt " + deg(sample.sky.altDeg))
             }
         }
     }

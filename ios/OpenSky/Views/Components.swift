@@ -1,12 +1,12 @@
 import OpenSkyCore
 import SwiftUI
+import UIKit
 
 // MARK: - Tema (día / noche roja)
 
 enum Palette {
-    /// Rojo de visión nocturna: no deslumbra ni borra la adaptación a la oscuridad.
-    static let nightRed = Color(red: 0.92, green: 0.16, blue: 0.12)
-    static let nightDim = Color(red: 0.55, green: 0.08, blue: 0.06)
+    /// Rojo del modo nocturno: solo el canal rojo, el que menos borra la adaptación a la oscuridad.
+    static let night = Color(red: 1, green: 0, blue: 0)
 }
 
 private struct NightModeKey: EnvironmentKey {
@@ -21,13 +21,18 @@ extension EnvironmentValues {
 }
 
 extension View {
-    /// Modo nocturno: todo en rojo sobre negro.
+    /// Modo nocturno: la interfaz oscura de siempre pasada a escala de rojos, como el filtro «Tinte de
+    /// color» de Accesibilidad. Es un filtro sobre todo lo que dibuja la app, así que también tiñe la
+    /// barra de pestañas, los títulos, los interruptores y los deslizadores. La barra de estado (que
+    /// iOS no deja teñir) y el indicador de inicio se ocultan.
     func nightTheme(_ on: Bool) -> some View {
         self
             .environment(\.nightMode, on)
-            .tint(on ? Palette.nightRed : Color.accentColor)
-            .foregroundStyle(on ? AnyShapeStyle(Palette.nightRed) : AnyShapeStyle(.primary))
             .preferredColorScheme(on ? .dark : nil)
+            .grayscale(on ? 1 : 0)
+            .colorMultiply(on ? Palette.night : .white)
+            .statusBarHidden(on)
+            .persistentSystemOverlays(on ? .hidden : .automatic)
     }
 
     /// Fondo de las listas: negro de noche.
@@ -35,6 +40,30 @@ extension View {
         self
             .scrollContentBackground(night ? .hidden : .automatic)
             .background(night ? Color.black : Color.clear)
+    }
+
+    /// Selector en menú de día; de noche, en una lista dentro de la app: los menús los dibuja el
+    /// sistema fuera del filtro rojo.
+    @ViewBuilder func nightAwarePickerStyle(_ night: Bool) -> some View {
+        if night {
+            pickerStyle(.navigationLink)
+        } else {
+            pickerStyle(.menu)
+        }
+    }
+
+    /// Botón «Listo» sobre el teclado: los teclados numéricos no tienen tecla de retorno.
+    func keyboardDoneButton() -> some View {
+        self
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Listo") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
     }
 }
 
@@ -49,8 +78,31 @@ extension Optional where Wrapped == KotlinFloat {
 }
 
 func deg(_ value: Double?, decimals: Int = 1) -> String {
-    guard let value else { return "—" }
-    return String(format: "%.\(decimals)f°", value)
+    guard let value, value.isFinite else { return "—" }
+    return unsignedZero(String(format: "%.\(decimals)f°", value))
+}
+
+/// Altura con signo («+12°», «-3°»); el cero, sin signo.
+func signedDeg(_ value: Double, decimals: Int = 0) -> String {
+    guard value.isFinite else { return "—" }
+    return unsignedZero(String(format: "%+.\(decimals)f°", value))
+}
+
+/// Acimut redondeado dentro de [0°, 360°): nunca «-0°» ni «360°».
+func azimuthText(_ value: Double?, decimals: Int = 0) -> String {
+    guard let value, value.isFinite else { return "—" }
+    let scale = pow(10, Double(decimals))
+    var rounded = ((value * scale).rounded() / scale).truncatingRemainder(dividingBy: 360)
+    if rounded < 0 { rounded += 360 }
+    if rounded == 0 || rounded >= 360 { rounded = 0 }
+    return String(format: "%.\(decimals)f°", rounded)
+}
+
+/// «-0.0°» → «0.0°»: un valor que se redondea a cero no lleva signo.
+private func unsignedZero(_ text: String) -> String {
+    guard let first = text.first, first == "-" || first == "+",
+          !text.contains(where: { $0 >= "1" && $0 <= "9" }) else { return text }
+    return String(text.dropFirst())
 }
 
 func cardinal(_ azDeg: Double) -> String {
@@ -64,7 +116,6 @@ struct StatusChip: View {
     enum Tone { case ok, busy, off }
     let text: String
     let tone: Tone
-    @Environment(\.nightMode) private var night
 
     var body: some View {
         HStack(spacing: 6) {
@@ -78,7 +129,6 @@ struct StatusChip: View {
     }
 
     private var color: Color {
-        if night { return tone == .off ? Palette.nightDim : Palette.nightRed }
         switch tone {
         case .ok: return .green
         case .busy: return .orange

@@ -23,7 +23,7 @@ struct TargetsView: View {
                         Text(c.label).tag(c)
                     }
                 }
-                .pickerStyle(.menu)
+                .nightAwarePickerStyle(night)
                 if s.busy { HStack { ProgressView(); Text("Trabajando…") } }
             }
             if s.category == TargetCategory.catalogStar && query.isEmpty {
@@ -64,16 +64,17 @@ struct TargetsView: View {
                 }
             }
         }
-        .confirmationDialog(selected?.target.name ?? "", isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } }), presenting: selected) { row in
-            Button("GoTo") { model.goto(target: row.target, confirmed: false) }
-            Button("Sync (el tubo ya está centrado en él)") { model.sync(target: row.target) }
-            Button("Cancelar", role: .cancel) {}
-        } message: { row in
-            Text(row.target.subtitle)
+        .sheet(isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } })) {
+            if let row = selected {
+                TargetActionSheet(row: row)
+                    .presentationDetents([.medium, .large])
+                    .nightTheme(night)
+            }
         }
         .alert(
             "¿Apuntar cerca del Sol?",
-            isPresented: Binding(get: { s.pendingConfirmation != nil }, set: { if !$0 { model.dismissConfirmation() } }),
+            // Con la hoja del objetivo abierta, la confirmación va dentro de la hoja.
+            isPresented: Binding(get: { s.pendingConfirmation != nil && selected == nil }, set: { if !$0 { model.dismissConfirmation() } }),
             presenting: s.pendingConfirmation
         ) { p in
             Button("Tengo filtro solar: apuntar", role: .destructive) { model.goto(target: p.target, confirmed: true) }
@@ -114,10 +115,10 @@ struct TargetRowView: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(String(format: "Alt %+.0f°", row.altDeg))
+                Text("Alt " + signedDeg(row.altDeg))
                     .font(.callout.weight(.semibold).monospacedDigit())
                     .foregroundStyle(row.visible ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.red))
-                Text(String(format: "Az %.0f° %@", row.azDeg, cardinal(row.azDeg)))
+                Text("Az \(azimuthText(row.azDeg)) \(cardinal(row.azDeg))")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 if let mag = row.magnitude.double {
                     Text(String(format: "mag %.1f", mag)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
@@ -125,6 +126,84 @@ struct TargetRowView: View {
             }
         }
         .contentShape(Rectangle())
+    }
+}
+
+/// Hoja de un objetivo: posición en vivo, GoTo y sync (y la confirmación si está cerca del Sol).
+/// Sustituye al diálogo del sistema para que el modo nocturno también la tiña de rojo.
+struct TargetActionSheet: View {
+    let row: TargetRow
+    @Environment(AppHost.self) private var host
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let s = host.targets.value
+        let model = host.graph.targetsScreen
+        let live = s.rows.first { $0.target.id == row.target.id } ?? row
+        let pending = s.pendingConfirmation.flatMap { $0.target.id == live.target.id ? $0 : nil }
+        NavigationStack {
+            List {
+                Section {
+                    StatGrid(stats: [
+                        Stat(label: "Altura", value: signedDeg(live.altDeg)),
+                        Stat(label: "Acimut", value: azimuthText(live.azDeg), detail: cardinal(live.azDeg)),
+                        Stat(label: "Magnitud", value: live.magnitude.double.map { String(format: "%.1f", $0) } ?? "—"),
+                    ])
+                    if !live.visible {
+                        WarningRow(text: "Ahora está bajo el horizonte.")
+                    }
+                    if let exp = live.maxExposureLabel {
+                        LabeledContent("Exposición máxima", value: exp)
+                    }
+                } footer: {
+                    Text(live.target.subtitle)
+                }
+                if let p = pending {
+                    Section {
+                        Text(p.reason)
+                        Button(role: .destructive) {
+                            model.goto(target: p.target, confirmed: true)
+                            dismiss()
+                        } label: {
+                            Label("Tengo filtro solar: apuntar", systemImage: "sun.max.trianglebadge.exclamationmark")
+                        }
+                        Button("Cancelar") { model.dismissConfirmation() }
+                    } header: {
+                        Text("¿Apuntar cerca del Sol?")
+                    }
+                } else {
+                    Section {
+                        Button {
+                            model.goto(target: live.target, confirmed: false)
+                            // Si el núcleo pide confirmación (cerca del Sol) la hoja sigue abierta para darla.
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(400))
+                                if host.targets.value.pendingConfirmation == nil { dismiss() }
+                            }
+                        } label: {
+                            Label("GoTo", systemImage: "scope")
+                        }
+                        Button {
+                            model.sync(target: live.target)
+                            dismiss()
+                        } label: {
+                            Label("Sync: el tubo ya está centrado en él", systemImage: "checkmark.circle")
+                        }
+                    } footer: {
+                        Text("Sync corrige el modelo de apuntado con este objeto; úsalo solo si está en el centro del ocular.")
+                    }
+                    .disabled(s.busy)
+                }
+            }
+            .navigationTitle(live.target.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cerrar") { dismiss() } }
+            }
+        }
+        .onDisappear {
+            if host.targets.value.pendingConfirmation != nil { model.dismissConfirmation() }
+        }
     }
 }
 
@@ -149,6 +228,7 @@ struct NewObjectSheet: View {
                     Text("Coordenadas J2000 (las de los catálogos y de Stellarium).")
                 }
             }
+            .keyboardDoneButton()
             .navigationTitle("Nuevo objeto")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

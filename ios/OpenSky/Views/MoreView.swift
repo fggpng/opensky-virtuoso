@@ -30,6 +30,8 @@ struct MoreView: View {
                     get: { s.settings.keepScreenOn },
                     set: { host.graph.more.setSetting(key: "screen_on", value: $0 ? "true" : "false") }
                 ))
+            } footer: {
+                Text("De noche la app se ve en rojo y oculta la barra de estado. Los menús y avisos del sistema no se pueden teñir desde la app: para que también queden en rojo, activa Configuración › Accesibilidad › Pantalla y tamaño del texto › Filtros de colores › Tinte de color (tono rojo, intensidad al máximo) y asígnalo a la Función rápida de accesibilidad (triple clic en el botón lateral).")
             }
         }
         .listStyle(.insetGrouped)
@@ -86,12 +88,14 @@ struct StellariumView: View {
                     Text("JNow (fecha actual)").tag("JNOW")
                     Text("J2000").tag("J2000")
                 }
+                .nightAwarePickerStyle(night)
                 Toggle("Servidor Stellarium", isOn: Binding(get: { s.settings.stellariumEnabled }, set: { model.setSetting(key: "st_on", value: $0 ? "true" : "false") }))
                 SettingField(title: "Puerto Stellarium", key: "st_port", value: "\(s.settings.stellariumPort)", keyboard: .numberPad)
                 Picker("Coordenadas Stellarium", selection: Binding(get: { s.settings.stellariumEpoch.name }, set: { model.setSetting(key: "st_epoch", value: $0) })) {
                     Text("J2000").tag("J2000")
                     Text("JNow (fecha actual)").tag("JNOW")
                 }
+                .nightAwarePickerStyle(night)
             } header: {
                 Text("Configuración")
             } footer: {
@@ -100,6 +104,7 @@ struct StellariumView: View {
         }
         .listStyle(.insetGrouped)
         .screenBackground(night)
+        .keyboardDoneButton()
         .navigationTitle("Stellarium")
         .messageBanner(s.message) { model.clearMessage() }
     }

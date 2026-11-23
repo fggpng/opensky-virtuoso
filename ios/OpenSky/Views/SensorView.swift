@@ -16,11 +16,11 @@ struct SensorView: View {
             Section {
                 if let o = s.orientation {
                     StatGrid(stats: [
-                        Stat(label: "Acimut", value: deg(o.trueAzimuthDeg), detail: cardinal(o.trueAzimuthDeg)),
+                        Stat(label: "Acimut", value: azimuthText(o.trueAzimuthDeg, decimals: 1), detail: cardinal(o.trueAzimuthDeg)),
                         Stat(label: "Altura", value: deg(o.altitudeDeg)),
                     ])
-                    LabeledContent("Acimut magnético", value: deg(o.magneticAzimuthDeg))
-                    LabeledContent("Declinación", value: String(format: "%+.1f°", o.declinationDeg))
+                    LabeledContent("Acimut magnético", value: azimuthText(o.magneticAzimuthDeg, decimals: 1))
+                    LabeledContent("Declinación", value: signedDeg(o.declinationDeg, decimals: 1))
                     LabeledContent("Brújula", value: o.accuracyLabel)
                     if let f = o.fieldStrengthUt.double {
                         LabeledContent("Campo magnético", value: String(format: "%.0f µT", f))

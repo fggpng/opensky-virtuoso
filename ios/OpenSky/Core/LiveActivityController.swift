@@ -18,13 +18,13 @@ final class LiveActivityController {
         }
     }
 
-    func update(mount: MountState?) {
+    func update(mount: MountState?, night: Bool) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard let mount, mount.link != LinkState.disconnected else {
             end()
             return
         }
-        let state = Self.content(for: mount)
+        let state = Self.content(for: mount, night: night)
         if activity == nil {
             let attributes = MountActivityAttributes(mountName: mount.info?.modelName ?? "Montura")
             activity = try? ActivityKit.Activity.request(
@@ -37,7 +37,8 @@ final class LiveActivityController {
         }
         guard state != last else { return }
         // Cambios de estado al instante; la posición, como mucho cada 5 s.
-        let important = state.status != last?.status || state.target != last?.target || state.alert != last?.alert
+        let important = state.status != last?.status || state.target != last?.target || state.alert != last?.alert ||
+            state.night != last?.night
         guard important || Date().timeIntervalSince(lastUpdate) > 5 else { return }
         last = state
         lastUpdate = Date()
@@ -52,7 +53,7 @@ final class LiveActivityController {
         Task { await current.end(nil, dismissalPolicy: .immediate) }
     }
 
-    private static func content(for m: MountState) -> MountActivityAttributes.ContentState {
+    private static func content(for m: MountState, night: Bool) -> MountActivityAttributes.ContentState {
         let a = m.activity
         let status: String
         let symbol: String
@@ -75,7 +76,8 @@ final class LiveActivityController {
             altitudeDeg: m.pointing?.altDeg,
             azimuthDeg: m.pointing?.azDeg,
             moving: moving,
-            alert: m.alert
+            alert: m.alert,
+            night: night
         )
     }
 }

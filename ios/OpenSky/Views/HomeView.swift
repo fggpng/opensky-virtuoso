@@ -58,7 +58,7 @@ struct HomeView: View {
             if let p = s.mount?.pointing {
                 StatGrid(stats: [
                     Stat(label: "Altura", value: deg(p.altDeg)),
-                    Stat(label: "Acimut", value: deg(p.azDeg, decimals: 0), detail: cardinal(p.azDeg)),
+                    Stat(label: "Acimut", value: azimuthText(p.azDeg), detail: cardinal(p.azDeg)),
                     Stat(label: "Estado", value: activityText(s.mount)),
                 ])
             }
@@ -96,6 +96,7 @@ struct HomeView: View {
                         Text(e.name).tag(e.id)
                     }
                 }
+                .nightAwarePickerStyle(night)
             }
             Hint(s.opticalSummary)
         } header: {
@@ -126,8 +127,8 @@ struct HomeView: View {
                 } label: {
                     Label("Probar con el simulador", systemImage: "cpu")
                 }
-                Hint("Une antes el iPhone a la red «\(s.settings.ssidPrefix)…» en Ajustes › Wi-Fi. iOS dirá «Sin conexión a Internet»: es normal.")
-                Button("Abrir Ajustes") {
+                Hint("Une antes el iPhone a la red «\(s.settings.ssidPrefix)…» en Configuración › Wi-Fi. iOS dirá «Sin conexión a Internet»: es normal.")
+                Button("Abrir Configuración") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
             }
@@ -237,7 +238,7 @@ struct ConnectHelpSheet: View {
             List {
                 Section("Wi-Fi de la montura") {
                     Text("1. Enciende la Virtuoso GTi y espera unos segundos.")
-                    Text("2. En Ajustes › Wi-Fi, únete a la red «SynScan_…» (contraseña de fábrica: ninguna).")
+                    Text("2. En Configuración › Wi-Fi, únete a la red «SynScan_…» (de fábrica no tiene contraseña).")
                     Text("3. Vuelve a OpenSky y pulsa «Conectar por la Wi-Fi de la montura».")
                     Text("La primera vez iOS pide permiso para la «red local»: acéptalo, sin él la app no puede hablar con la montura.")
                 }

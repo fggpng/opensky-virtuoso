@@ -15,8 +15,10 @@ Como no está en la App Store, se instala con tu **Apple ID gratuito** y una her
   OpenSky trae una extensión (Live Activity y control del Centro de control) que en AltStore y
   SideStore cuenta como otra app. Si llegas al límite, en Sideloadly marca
   *Advanced options › Remove app extensions* (pierdes solo la Live Activity y el control).
-- **Modo de desarrollador**: iOS lo pide la primera vez (Ajustes › Privacidad y seguridad › Modo de
-  desarrollador › activar y reiniciar).
+- **Modo de desarrollador**: iOS lo pide la primera vez (Configuración › Privacidad y seguridad ›
+  Modo de desarrollador › activar y reiniciar).
+
+En esta guía, **Configuración** es la app de ajustes del iPhone (en España se llama «Ajustes»).
 
 ## Opción A: Sideloadly (desde una PC con Windows o una Mac)
 
@@ -27,7 +29,8 @@ Como no está en la App Store, se instala con tu **Apple ID gratuito** y una her
 3. Conecta el iPhone por cable, desbloquéalo y acepta «Confiar en esta computadora».
 4. Abre Sideloadly, arrastra el `.ipa`, escribe tu Apple ID y pulsa **Start**. Te pedirá la
    contraseña del Apple ID (y el código de verificación en dos pasos).
-5. En el iPhone: **Ajustes › General › VPN y gestión de dispositivos** › tu Apple ID › **Confiar**.
+5. En el iPhone: **Configuración › General › Admón. de dispositivos y VPN** › tu Apple ID (en
+   «App de desarrollador») › **Confiar**.
 6. Si iOS lo pide, activa el **Modo de desarrollador** y reinicia.
 
 Para no tener que conectarlo cada semana: en Sideloadly activa *Automatic refresh* y deja la PC
@@ -47,13 +50,13 @@ iOS pedirá tres permisos; acéptalos:
 - **Ubicación (al usar la app)**: latitud y longitud del sitio. Con la montura conectada también
   mantiene viva la sesión con la pantalla bloqueada (verás el indicador azul).
 - **Red local**: imprescindible para hablar con la montura y para Stellarium. Si lo rechazaste:
-  Ajustes › Privacidad y seguridad › Red local › OpenSky.
+  Configuración › Privacidad y seguridad › Red local › OpenSky.
 - **Live Activities**: el estado y el botón DETENER en la pantalla bloqueada y la Dynamic Island.
 
 ## Conectar la montura
 
 1. Enciende la Virtuoso GTi.
-2. En **Ajustes › Wi-Fi** únete a la red **SynScan_…**. iOS dirá «Sin conexión a Internet»: es
+2. En **Configuración › Wi-Fi** únete a la red **SynScan_…**. iOS dirá «Sin conexión a Internet»: es
    normal (iOS no deja que una app se una sola a una Wi-Fi sin la cuenta de pago).
 3. En OpenSky, **Inicio › Conectar por la Wi-Fi de la montura**.
 
@@ -61,12 +64,25 @@ Sin la montura, **Probar con el simulador** responde a los mismos comandos.
 
 ## Extras del iPhone 16 Pro Max
 
-- **Botón de Acción**: Ajustes › Botón de Acción › **Atajo** › OpenSky › **Detener telescopio**.
+- **Botón de Acción**: Configuración › Botón de Acción › **Atajo** › OpenSky › **Detener telescopio**.
   Una pulsación detiene los motores aunque la app esté en segundo plano.
 - **Centro de control**: mantén pulsado, «Añadir un control» › OpenSky › **Detener telescopio**.
 - **Siri**: «Detén el telescopio con OpenSky».
 - **Live Activity**: mientras la montura está conectada, la Dynamic Island muestra el estado
   (GoTo, siguiendo, quieta) y la altura; al expandirla, el objetivo y el botón DETENER.
+
+## Modo nocturno
+
+**Más › Modo nocturno (rojo)** pasa toda la app a rojo sobre negro (también la barra de pestañas,
+los interruptores y la Live Activity) y oculta la barra de estado. Los menús y avisos del sistema
+no se pueden teñir desde una app; para que todo el iPhone quede en rojo:
+
+1. **Configuración › Accesibilidad › Pantalla y tamaño del texto › Filtros de colores**: actívalo,
+   elige **Tinte de color** y lleva la intensidad y el tono al rojo.
+2. **Configuración › Accesibilidad › Función rápida de accesibilidad** › **Filtros de colores**.
+
+Con eso, tres clics en el botón lateral ponen o quitan el rojo en todo el teléfono. Baja también
+el brillo al mínimo.
 
 ## Actualizar
 
@@ -77,7 +93,7 @@ La app no puede actualizarse sola en iOS.
 
 | | Android | iOS |
 |---|---|---|
-| Unirse a la Wi-Fi SynScan | La app la pide sola | En Ajustes › Wi-Fi |
+| Unirse a la Wi-Fi SynScan | La app la pide sola | En Configuración › Wi-Fi |
 | Con la pantalla bloqueada | Servicio en primer plano | Ubicación en segundo plano (indicador azul) |
 | Actualizaciones | Desde la app | Reinstalar el `.ipa` |
 | DETENER sin abrir la app | Notificación | Live Activity, botón de Acción, Centro de control, Siri |

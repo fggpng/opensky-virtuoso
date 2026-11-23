@@ -18,6 +18,7 @@ struct SettingsView: View {
                     Text("UDP (Wi-Fi de la montura)").tag("UDP")
                     Text("TCP (puente serie-Wi-Fi)").tag("TCP")
                 }
+                .nightAwarePickerStyle(night)
                 SettingField(title: "Red Wi-Fi", key: "ssid_prefix", value: s.ssidPrefix)
             } header: {
                 Text("Conexión")
@@ -75,6 +76,7 @@ struct SettingsView: View {
             }
         }
         .screenBackground(night)
+        .keyboardDoneButton()
         .navigationTitle("Ajustes")
     }
 

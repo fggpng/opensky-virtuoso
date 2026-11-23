@@ -22,6 +22,7 @@ final class AppHost {
     @ObservationIgnored private var watches: [Watch] = []
     private let live = LiveActivityController()
     @ObservationIgnored private var active = true
+    @ObservationIgnored private var night = false
 
     private init() {
         let bridge = DeviceBridge()
@@ -38,7 +39,14 @@ final class AppHost {
             MainActor.assumeIsolated { self?.mountChanged(state.mount) }
         })
         watches.append(graph.home.state.watch { [weak self] state in
-            MainActor.assumeIsolated { self?.applyScreenSetting(state.settings.keepScreenOn) }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.applyScreenSetting(state.settings.keepScreenOn)
+                if state.settings.nightMode != self.night {
+                    self.night = state.settings.nightMode
+                    self.live.update(mount: self.graph.control.state.value.mount, night: self.night)
+                }
+            }
         })
         let args = ProcessInfo.processInfo.arguments
         if args.contains("--demo") { startDemo(night: args.contains("--night")) }
@@ -80,7 +88,7 @@ final class AppHost {
     private func mountChanged(_ mount: MountState?) {
         let connected = mount != nil && mount?.link != LinkState.disconnected
         device.setKeepAlive(connected)
-        live.update(mount: mount)
+        live.update(mount: mount, night: night)
     }
 
     private func applyScreenSetting(_ keepOn: Bool) {

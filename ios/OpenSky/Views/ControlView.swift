@@ -46,7 +46,7 @@ struct ControlView: View {
             if let m = s.mount {
                 StatGrid(stats: [
                     Stat(label: "Altura", value: deg(m.pointing?.altDeg)),
-                    Stat(label: "Acimut", value: deg(m.pointing?.azDeg, decimals: 0), detail: m.pointing.map { cardinal($0.azDeg) }),
+                    Stat(label: "Acimut", value: azimuthText(m.pointing?.azDeg), detail: m.pointing.map { cardinal($0.azDeg) }),
                     Stat(label: "Estado", value: activityText(m)),
                 ])
                 if let target = m.target {
@@ -98,17 +98,42 @@ struct ControlView: View {
             Text("Seguimiento").font(.headline)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 ForEach(s.trackingRates, id: \.self) { rate in
-                    Button(rate.label) { model.startTracking(rate: rate) }
-                        .buttonStyle(.glass)
-                        .frame(maxWidth: .infinity)
+                    TrackingButton(title: rate.label, active: s.mount?.tracking == rate) {
+                        model.startTracking(rate: rate)
+                    }
                 }
             }
-            Button("Detener seguimiento") { model.stopTracking() }
-                .buttonStyle(.glass)
+            Button { model.stopTracking() } label: {
+                Text("Detener seguimiento").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glass)
+            .disabled(s.mount?.tracking == nil)
         }
         .padding()
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
         .disabled(s.mount == nil)
+    }
+}
+
+/// Velocidad de seguimiento; la activa, destacada.
+private struct TrackingButton: View {
+    let title: String
+    let active: Bool
+    let action: () -> Void
+
+    var body: some View {
+        if active {
+            Button(action: action) { label }
+                .buttonStyle(.glassProminent)
+                .accessibilityAddTraits(.isSelected)
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(.glass)
+        }
+    }
+
+    private var label: some View {
+        Text(title).frame(maxWidth: .infinity)
     }
 }
 
