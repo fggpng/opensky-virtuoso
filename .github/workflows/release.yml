@@ -33,7 +33,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Pruebas del núcleo (astronomía, protocolo, alineación, simulador)
-        run: ./gradlew --no-daemon --stacktrace :core:test
+        run: ./gradlew --no-daemon --stacktrace :core:jvmTest
 
       - name: Preparar la clave de firma
         env:

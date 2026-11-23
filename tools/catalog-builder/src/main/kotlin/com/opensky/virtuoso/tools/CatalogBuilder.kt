@@ -3,6 +3,9 @@ package com.opensky.virtuoso.tools
 import com.opensky.virtuoso.astronomy.EquatorialCoord
 import com.opensky.virtuoso.database.tycho2.Tycho2Catalog
 import com.opensky.virtuoso.database.tycho2.Tycho2Converter
+import com.opensky.virtuoso.database.tycho2.addFile
+import com.opensky.virtuoso.database.tycho2.open
+import com.opensky.virtuoso.database.tycho2.write
 import java.io.File
 import java.net.URI
 import java.nio.file.Files

@@ -1,0 +1,49 @@
+# Núcleo para iOS en un Mac de GitHub: pruebas nativas (macOS arm64, mismo código que en el
+# iPhone) y el framework OpenSkyCore.xcframework que usa la app de SwiftUI.
+name: iOS
+
+on:
+  push:
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Versiones de Xcode y del SDK
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Pruebas del núcleo en nativo y framework para iOS
+        run: >
+          ./gradlew --no-daemon --stacktrace -Popensky.skipAndroid=true
+          :core:macosArm64Test :core:assembleOpenSkyCoreReleaseXCFramework
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenSkyCore.xcframework
+          path: core/build/XCFrameworks/release/OpenSkyCore.xcframework
+
+      - name: Guardar informes si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: informes-ios
+          path: core/build/reports/
+          if-no-files-found: ignore

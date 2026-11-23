@@ -10,8 +10,14 @@ import com.opensky.virtuoso.database.targets.UserObject
 import com.opensky.virtuoso.database.tycho2.Tycho2Catalog
 import com.opensky.virtuoso.database.tycho2.Tycho2Converter
 import com.opensky.virtuoso.database.tycho2.Tycho2Format
+import com.opensky.virtuoso.database.tycho2.addStream
+import com.opensky.virtuoso.database.tycho2.isInstalled
+import com.opensky.virtuoso.database.tycho2.open
+import com.opensky.virtuoso.database.tycho2.write
 import com.opensky.virtuoso.network.web.SbdbResult
 import com.opensky.virtuoso.network.web.SmallBodyService
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,8 +29,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.util.UUID
 
 /** Escritura atómica: archivo temporal + rename (sin JSON a medias si se cierra la app). */
 private fun File.writeAtomically(text: String) {

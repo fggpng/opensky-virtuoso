@@ -112,8 +112,8 @@ class TelescopeSession(
                         wifi.useCurrentWifi()
                         withTimeoutOrNull(5_000) { wifi.state.first { it is WifiLinkState.Connected } }
                     }
-                    if (s.transport == MountTransportType.UDP) UdpMountTransport(s.mountHost, s.mountPort) { wifi.bindDatagram(it) }
-                    else TcpMountTransport(s.mountHost, s.mountPort) { wifi.bindSocket(it) }
+                    if (s.transport == MountTransportType.UDP) UdpMountTransport(s.mountHost, s.mountPort) { wifi.bindDatagram(it.javaSocket) }
+                    else TcpMountTransport(s.mountHost, s.mountPort) { wifi.bindSocket(it.javaSocket) }
                 }
             }
             transport = t

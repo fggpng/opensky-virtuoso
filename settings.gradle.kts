@@ -23,5 +23,6 @@ dependencyResolutionManagement {
 rootProject.name = "OpenSkyVirtuosoController"
 
 include(":core")
-include(":app")
+// En el Mac de CI (app de iOS) no hay SDK de Android: -Popensky.skipAndroid=true omite la app.
+if (providers.gradleProperty("opensky.skipAndroid").orNull != "true") include(":app")
 include(":tools:catalog-builder")
