@@ -42,8 +42,6 @@ import platform.posix.gai_strerror
 import platform.posix.getaddrinfo
 import platform.posix.getsockname
 import platform.posix.getsockopt
-import platform.posix.in_addr
-import platform.posix.inet_pton
 import platform.posix.listen
 import platform.posix.memset
 import platform.posix.poll
@@ -88,10 +86,14 @@ private fun setIntOption(fd: Int, level: Int, option: Int, value: Int) {
     }
 }
 
+/** 4 bytes de una IPv4 en el orden de memoria de sin_addr (orden de red). */
+private fun networkOrder(b: IntArray): UInt =
+    (b[0] or (b[1] shl 8) or (b[2] shl 16) or (b[3] shl 24)).toUInt()
+
 /** Dirección IPv4 (orden de red, tal como va en sin_addr) de un literal o de un nombre (DNS). */
 private fun resolveIpv4(host: String): UInt = memScoped {
-    val literal = alloc<in_addr>()
-    if (inet_pton(AF_INET, host, literal.ptr) == 1) return literal.s_addr
+    IpAddresses.parseIpv4(host)?.let { return networkOrder(it) }
+    if (host == "localhost") return networkOrder(intArrayOf(127, 0, 0, 1))
     val hints = alloc<addrinfo>()
     memset(hints.ptr, 0, sizeOf<addrinfo>().convert())
     hints.ai_family = AF_INET

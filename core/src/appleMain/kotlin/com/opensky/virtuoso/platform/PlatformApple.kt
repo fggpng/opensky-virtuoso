@@ -9,7 +9,6 @@ import platform.Foundation.NSRecursiveLock
 import platform.Foundation.NSTimeZone
 import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.localTimeZone
-import platform.Foundation.secondsFromGMTForDate
 import platform.Foundation.timeIntervalSince1970
 
 actual fun epochMillisNow(): Long = (NSDate().timeIntervalSince1970 * 1000.0).toLong()

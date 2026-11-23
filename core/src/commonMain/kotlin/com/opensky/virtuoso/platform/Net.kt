@@ -61,9 +61,6 @@ expect class TcpSocket() : AutoCloseable {
      */
     fun read(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset, timeoutMs: Int = 0): Int
 
-    /** Bytes ya recibidos que se pueden leer sin bloquear. */
-    fun available(): Int
-
     override fun close()
 }
 

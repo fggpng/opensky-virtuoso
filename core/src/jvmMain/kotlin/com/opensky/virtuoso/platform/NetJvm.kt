@@ -74,8 +74,6 @@ actual class TcpSocket internal constructor(
         return javaSocket.getInputStream().read(buffer, offset, length)
     }
 
-    actual fun available(): Int = javaSocket.getInputStream().available()
-
     actual override fun close() = javaSocket.close()
 }
 
