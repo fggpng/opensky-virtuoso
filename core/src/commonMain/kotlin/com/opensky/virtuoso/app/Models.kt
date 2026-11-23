@@ -95,7 +95,8 @@ abstract class ScreenModel internal constructor(protected val g: AppGraph) {
 
 // ------------------------------------------------------------------------------------- Inicio
 
-data class ClockInfo(val utc: String, val local: String, val lst: String, val zone: String)
+/** Relojes de Inicio. (`zoneLabel` y no `zone`: en Swift `zone` es un método de NSObject.) */
+data class ClockInfo(val utc: String, val local: String, val lst: String, val zoneLabel: String)
 
 data class HomeState(
     val session: SessionState,
@@ -259,7 +260,7 @@ class HomeModel internal constructor(g: AppGraph) : ScreenModel(g) {
             utc = "%04d-%02d-%02d %02d:%02d:%02d UTC".fmt(utc.year, utc.month, utc.day, utc.hour, utc.minute, utc.second),
             local = "%02d:%02d:%02d".fmt(local.hour, local.minute, local.second),
             lst = lon?.let { Angles.formatHms(EarthOrientation.last(now, it) / HOUR, 1) } ?: "— (sin ubicación)",
-            zone = if (s.useSystemTimeZone) systemTimeZoneId() else utcOffsetId(offsetSec),
+            zoneLabel = if (s.useSystemTimeZone) systemTimeZoneId() else utcOffsetId(offsetSec),
         )
     }
 

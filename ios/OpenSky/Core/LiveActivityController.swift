@@ -10,6 +10,14 @@ final class LiveActivityController {
     private var last: MountActivityAttributes.ContentState?
     private var lastUpdate = Date.distantPast
 
+    init() {
+        // Una Live Activity de una ejecución anterior (la app se cerró) ya no refleja nada: fuera.
+        let stale = ActivityKit.Activity<MountActivityAttributes>.activities
+        Task {
+            for activity in stale { await activity.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     func update(mount: MountState?) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         guard let mount, mount.link != LinkState.disconnected else {

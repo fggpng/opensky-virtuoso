@@ -28,7 +28,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
-  build | tee build/xcodebuild.log | grep -E "error:|warning: .*deprecated|BUILD (SUCCEEDED|FAILED)|\*\* " || true
+  build | tee build/xcodebuild.log | grep -E "error:|/ios/(OpenSky|OpenSkyWidgets|Shared)/.*warning:|BUILD (SUCCEEDED|FAILED)|\*\* " || true
 grep -q "BUILD SUCCEEDED" build/xcodebuild.log || { echo "La compilación de Xcode falló"; grep -E "error:" build/xcodebuild.log | head -80; exit 1; }
 
 echo "== Empaquetado"
