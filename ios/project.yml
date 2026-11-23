@@ -43,6 +43,8 @@ targets:
         UILaunchScreen:
           UIColorName: LaunchBackground
         UIApplicationSupportsIndirectInputEvents: true
+        # Animaciones a 120 Hz en la pantalla ProMotion (iPhone 13 Pro y posteriores).
+        CADisableMinimumFrameDurationOnPhone: true
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

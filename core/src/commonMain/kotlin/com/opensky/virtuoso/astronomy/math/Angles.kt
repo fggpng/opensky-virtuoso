@@ -18,10 +18,14 @@ const val HOUR = PI / 12.0
 /** Utilidades de ángulos: normalización, formato y parseo sexagesimal. */
 object Angles {
 
-    /** Normaliza radianes a [0, 2π). */
+    /** Normaliza radianes a [0, 2π) (sin −0, que en pantalla sería «-0°»). */
     fun norm2Pi(a: Double): Double {
         val r = a % TWO_PI
-        return if (r < 0) r + TWO_PI else r
+        return when {
+            r < 0 -> (r + TWO_PI).let { if (it >= TWO_PI) 0.0 else it } // −1e-17 + 2π redondea a 2π
+            r == 0.0 -> 0.0
+            else -> r
+        }
     }
 
     /** Normaliza radianes a (-π, π]. */
@@ -31,10 +35,14 @@ object Angles {
         return r
     }
 
-    /** Normaliza grados a [0, 360). */
+    /** Normaliza grados a [0, 360) (sin −0). */
     fun norm360(d: Double): Double {
         val r = d % 360.0
-        return if (r < 0) r + 360.0 else r
+        return when {
+            r < 0 -> (r + 360.0).let { if (it >= 360.0) 0.0 else it }
+            r == 0.0 -> 0.0
+            else -> r
+        }
     }
 
     /** Normaliza grados a (-180, 180]. */

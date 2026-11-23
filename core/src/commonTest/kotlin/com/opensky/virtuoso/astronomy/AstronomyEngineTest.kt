@@ -132,6 +132,19 @@ class AstronomyEngineTest {
         assertTrue(back.separation(app) < 0.2 * ARCSEC * 60) // < 0.2′ (inversión de refracción)
     }
 
+    @Test fun angleNormalizationHasNoNegativeZero() {
+        val a = com.opensky.virtuoso.astronomy.math.Angles
+        // −0 se vería «-0°» en pantalla (el tubo en la posición de inicio, hacia el norte).
+        assertTrue(1.0 / a.norm2Pi(-0.0) > 0)
+        assertTrue(1.0 / a.norm360(-0.0) > 0)
+        assertTrue(1.0 / HorizontalCoord.fromVector(com.opensky.virtuoso.astronomy.math.Vec3(1.0, 0.0, 0.0)).azDeg > 0)
+        // Un negativo diminuto no debe dar exactamente 2π / 360 (fuera del intervalo).
+        assertEquals(0.0, a.norm2Pi(-1e-17), 0.0)
+        assertEquals(0.0, a.norm360(-1e-14), 0.0)
+        assertEquals(359.0, a.norm360(-1.0), 1e-12)
+        assertEquals(1.0, a.norm360(361.0), 1e-12)
+    }
+
     @Test fun angleFormatting() {
         assertEquals("05h 30m 00.0s", com.opensky.virtuoso.astronomy.math.Angles.formatHms(5.5))
         assertEquals("-12° 30′ 00″", com.opensky.virtuoso.astronomy.math.Angles.formatDms(-12.5))
