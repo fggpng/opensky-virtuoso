@@ -8,6 +8,20 @@ expect fun epochMillisNow(): Long
 /** Desfase de la zona horaria del teléfono respecto a UTC, en segundos, en el instante dado. */
 expect fun systemUtcOffsetSeconds(epochMillis: Long): Int
 
+/** Identificador de la zona horaria del teléfono («America/Chihuahua»). */
+expect fun systemTimeZoneId(): String
+
+/** "+05:30", "-06:00" o "Z" (como java.time.ZoneOffset.getId()). */
+fun utcOffsetId(totalSeconds: Int): String {
+    if (totalSeconds == 0) return "Z"
+    val sign = if (totalSeconds < 0) '-' else '+'
+    val abs = if (totalSeconds < 0) -totalSeconds else totalSeconds
+    val h = abs / 3600
+    val m = (abs / 60) % 60
+    val s = abs % 60
+    return if (s == 0) "%c%02d:%02d".fmt(sign, h, m) else "%c%02d:%02d:%02d".fmt(sign, h, m, s)
+}
+
 private val monotonicOrigin = TimeSource.Monotonic.markNow()
 
 /** Reloj monótono en ns (solo para medir intervalos; no avanza hacia atrás). */

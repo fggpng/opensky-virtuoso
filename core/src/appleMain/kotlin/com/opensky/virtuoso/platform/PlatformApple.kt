@@ -16,7 +16,12 @@ actual fun epochMillisNow(): Long = (NSDate().timeIntervalSince1970 * 1000.0).to
 actual fun systemUtcOffsetSeconds(epochMillis: Long): Int =
     NSTimeZone.localTimeZone.secondsFromGMTForDate(NSDate.dateWithTimeIntervalSince1970(epochMillis / 1000.0)).toInt()
 
+actual fun systemTimeZoneId(): String = NSTimeZone.localTimeZone.name
+
 actual val ioDispatcher: CoroutineDispatcher get() = Dispatchers.IO
+
+/** Hilo principal: SwiftUI solo se puede tocar desde ahí. */
+actual val uiDispatcher: CoroutineDispatcher get() = Dispatchers.Main
 
 actual class AtomicFlag actual constructor(initial: Boolean) {
     private val lock = NSLock()

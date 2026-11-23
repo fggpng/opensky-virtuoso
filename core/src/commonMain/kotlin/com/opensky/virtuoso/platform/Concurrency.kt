@@ -5,6 +5,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 /** Despachador para E/S bloqueante (sockets, archivos): Dispatchers.IO en JVM y en iOS. */
 expect val ioDispatcher: CoroutineDispatcher
 
+/** Hilo de la interfaz (principal en iOS) para avisar a la UI de cambios de estado. */
+expect val uiDispatcher: CoroutineDispatcher
+
 /** Booleano atómico (equivale a java.util.concurrent.atomic.AtomicBoolean). */
 expect class AtomicFlag(initial: Boolean) {
     fun get(): Boolean

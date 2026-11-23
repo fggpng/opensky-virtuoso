@@ -12,7 +12,12 @@ actual fun epochMillisNow(): Long = System.currentTimeMillis()
 actual fun systemUtcOffsetSeconds(epochMillis: Long): Int =
     ZoneId.systemDefault().rules.getOffset(Instant.ofEpochMilli(epochMillis)).totalSeconds
 
+actual fun systemTimeZoneId(): String = ZoneId.systemDefault().id
+
 actual val ioDispatcher: CoroutineDispatcher get() = Dispatchers.IO
+
+/** En la JVM (pruebas) no hay hilo de interfaz: los avisos se entregan en el acto. */
+actual val uiDispatcher: CoroutineDispatcher get() = Dispatchers.Unconfined
 
 actual class AtomicFlag actual constructor(initial: Boolean) {
     private val value = AtomicBoolean(initial)
