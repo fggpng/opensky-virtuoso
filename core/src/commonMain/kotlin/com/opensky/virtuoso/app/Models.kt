@@ -114,6 +114,8 @@ data class HomeState(
     val observingModes: List<ObservingMode>,
     val headingReferences: List<HeadingReference>,
     val connectionModes: List<ConnectionMode>,
+    /** «Super MA 25 mm · 30× · campo 104′ (1.73°)» o el campo de la cámara. */
+    val opticalSummary: String,
 )
 
 class HomeModel internal constructor(g: AppGraph) : ScreenModel(g) {
@@ -143,6 +145,7 @@ class HomeModel internal constructor(g: AppGraph) : ScreenModel(g) {
             checking = checking.value, locationKnown = locationKnown.value,
             manualPreview = manualPreview.value, manualError = manualError.value, eyepieces = Equipment.EYEPIECES,
             observingModes = ObservingMode.entries, headingReferences = HeadingReference.entries, connectionModes = ConnectionMode.entries,
+            opticalSummary = g.settings.current.opticalSetup().summary,
         )
     }
     val state = StateWatcher(stateFlow)
@@ -811,8 +814,12 @@ class MoreModel internal constructor(g: AppGraph) : ScreenModel(g) {
      */
     fun setSetting(key: String, value: String) = g.settings.update { current ->
         val encoded = SettingsCodec.encode(current)
-        require(key in encoded) { "Ajuste desconocido: $key" }
-        SettingsCodec.decode { k -> if (k == key) value else encoded[k] }
+        if (key !in encoded) {
+            Diagnostics.log("Ajuste desconocido: $key")
+            current
+        } else {
+            SettingsCodec.decode { k -> if (k == key) value else encoded[k] }
+        }
     }
 
     fun restartServers() {

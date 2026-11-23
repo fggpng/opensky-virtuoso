@@ -15,6 +15,7 @@ command -v xcodegen >/dev/null || brew install xcodegen
 (cd ios && xcodegen generate)
 
 echo "== Compilación (sin firmar) de la versión 1.0.$N"
+mkdir -p build
 xcodebuild \
   -project ios/OpenSky.xcodeproj \
   -scheme OpenSky \
@@ -36,3 +37,7 @@ rm -rf build/ipa && mkdir -p build/ipa/Payload
 cp -R "$APP" build/ipa/Payload/
 (cd build/ipa && zip -qry ../OpenSky.ipa Payload)
 ls -la build/OpenSky.ipa
+echo "== Contenido"
+ls -la "$APP" "$APP/PlugIns" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleShortVersionString" -c "Print :MinimumOSVersion" "$APP/Info.plist" || true
+lipo -info "$APP/OpenSky" || true

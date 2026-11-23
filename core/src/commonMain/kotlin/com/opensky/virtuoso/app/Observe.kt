@@ -4,6 +4,7 @@ import com.opensky.virtuoso.platform.epochMillisNow
 import com.opensky.virtuoso.platform.uiDispatcher
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +32,7 @@ class StateWatcher<T : Any>(private val flow: StateFlow<T>) {
     }
 
     internal companion object {
-        val watchScope = CoroutineScope(SupervisorJob())
+        val watchScope = CoroutineScope(SupervisorJob() + CoroutineExceptionHandler { _, _ -> })
 
         /** Solo pruebas: en un binario de pruebas nativo el hilo principal está ocupado por runBlocking. */
         @Volatile

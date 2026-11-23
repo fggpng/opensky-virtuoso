@@ -1,6 +1,8 @@
 # OpenSky Virtuoso Controller
 
-App Android nativa (Kotlin + Jetpack Compose, MVVM/Clean) para controlar la montura **Sky-Watcher Virtuoso GTi 150P** por Wi-Fi: alineación por estrellas con ajuste matricial por mínimos cuadrados, GoTo, seguimiento alt-az en lazo cerrado, catálogo Tycho-2, Sistema Solar, cometas/asteroides y puente para **Stellarium**.
+App para **Android** (Kotlin + Jetpack Compose) e **iOS 27** (SwiftUI) que controla la montura **Sky-Watcher Virtuoso GTi 150P** por Wi-Fi: alineación por estrellas con ajuste matricial por mínimos cuadrados, GoTo, seguimiento alt-az en lazo cerrado, catálogo Tycho-2, Sistema Solar, cometas/asteroides y puente para **Stellarium**. Las dos apps comparten el núcleo en Kotlin Multiplatform (astronomía, protocolo, alineación, control y la lógica de las pantallas).
+
+**iPhone**: cada versión publica también `opensky-virtuoso-N.ipa`; se instala gratis con tu Apple ID siguiendo [docs/instalar-en-iphone.md](docs/instalar-en-iphone.md).
 
 > ⚠️ **Sol**: nunca apuntes al Sol sin un filtro solar certificado de apertura completa (y el buscador tapado). La app bloquea el GoTo al Sol y a objetivos a menos de 15° de él salvo confirmación explícita, y el puente Stellarium/LX200 nunca permite esa zona.
 
@@ -18,7 +20,11 @@ App Android nativa (Kotlin + Jetpack Compose, MVVM/Clean) para controlar la mont
 ## Arquitectura
 
 ```
-:core  (Kotlin/JVM puro, probado con JUnit)
+:core  (Kotlin Multiplatform: JVM para Android, iosArm64/iosSimulatorArm64 para iOS; pruebas comunes
+        en la JVM y en nativo macosArm64)
+ ├─ platform         capa común: formato tipo printf, fechas, sockets UDP/TCP (java.net | POSIX), HTTP,
+ │                   archivos mapeados, cerrojos
+ ├─ app              (iOS) sesión, modelos de pantalla, repositorios y StateWatcher para SwiftUI
  ├─ astronomy        AstroTime (UTC/UT1/TT), EarthOrientation (precesión IAU76, nutación, GMST/GAST/LAST IAU2006),
  │                   AstroEngine (J2000→aparente→topocéntrica→Alt/Az + refracción), Coordinates
  │   └─ ephemeris    Sol/planetas (elementos JPL), Luna (Meeus cap. 47), cometas/asteroides (Kepler elíptico/parabólico/hiperbólico)
@@ -37,6 +43,10 @@ App Android nativa (Kotlin + Jetpack Compose, MVVM/Clean) para controlar la mont
  ├─ di               AppContainer (inyección manual: sin KSP/kapt)
  └─ ui               Compose Material 3, tema rojo de visión nocturna, ViewModels por pantalla
 :tools:catalog-builder   CLI para convertir/descargar el Tycho-2 en el PC
+ios/   (SwiftUI, iOS 27; proyecto generado con XcodeGen a partir de ios/project.yml)
+ ├─ OpenSky          App: pestañas, DeviceBridge (CoreMotion, CoreLocation), Live Activity, atajos
+ ├─ OpenSkyWidgets   Live Activity / Dynamic Island y control DETENER del Centro de control
+ └─ Shared           StopMountIntent (LiveActivityIntent) y atributos de la Live Activity
 ```
 
 Flujo de un GoTo: objetivo → `TargetResolver` (posición aparente + paralaje + refracción) → `AlignmentManager.skyToMount` (modelo global + corrección local) → pasos de encoder → `MountClient.gotoSteps` → segunda pasada corta → `trackingLoop` (prealimentación + corrección proporcional cada segundo).
@@ -61,9 +71,13 @@ Flujo de un GoTo: objetivo → `TargetResolver` (posición aparente + paralaje +
 Requisitos: Android Studio con soporte de **AGP 9.5** (Gradle 9.6, JDK 17+), SDK de Android 17 (compileSdk 37). La app apunta a Android 16 (`targetSdk 36`), `minSdk 29`.
 
 ```bash
-./gradlew :core:test            # 41 pruebas JVM (Meeus, protocolo, simulador, catálogo, alineación, servidores)
+./gradlew :core:jvmTest         # pruebas del núcleo en la JVM (Meeus, protocolo, simulador, catálogo, alineación, servidores, capa de iOS)
 ./gradlew :app:assembleDebug
 ```
+
+La app de iOS se compila en un Mac de GitHub Actions (no hace falta tener Mac): `ios/scripts/build-ipa.sh`
+corre las pruebas nativas del núcleo, genera `OpenSkyCore.xcframework`, el proyecto de Xcode con XcodeGen y
+la `.ipa` sin firmar.
 
 Versiones fijadas en `gradle/libs.versions.toml` (Kotlin 2.4.21, Compose BOM 2026.09.00, etc.). AGP 9 compila Kotlin de forma integrada, por eso **no** se aplica `org.jetbrains.kotlin.android`.
 

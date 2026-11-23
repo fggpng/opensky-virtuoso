@@ -225,6 +225,41 @@ class AppLayerTest {
         }
     }
 
+    @Test fun catalogImportConvertsAndOpens() = runBlocking {
+        val (g, _) = graph()
+        try {
+            waitFor { !g.catalogs.status.value.isInstalled }
+            // MemoryCatalogFiles trata cada «ruta» como una línea de tyc2.dat.
+            val vega = MutableList(32) { "" }.apply {
+                this[0] = "9001 00001 1"; this[1] = " "; this[2] = "279.23400000"; this[3] = " 38.78370000"
+                this[17] = " 0.630"; this[19] = " 0.090"; this[23] = " 91262   "; this[24] = "279.23400000"; this[25] = " 38.78370000"
+            }.joinToString("|")
+            g.more.importCatalog(listOf(vega))
+            waitFor { g.catalogs.status.value.isReady }
+            assertEquals("Instalado: 1 estrellas", g.catalogs.status.value.label)
+            assertNotNull(g.catalogs.catalog.value?.findByHip(91262))
+            g.more.deleteCatalog()
+            waitFor { !g.catalogs.status.value.isInstalled }
+        } finally {
+            g.scope.cancel()
+        }
+    }
+
+    @Test fun settingsPersistAcrossGraphs() {
+        val p = FakePlatform()
+        val g1 = AppGraph(p)
+        g1.more.setSetting("night", "false")
+        g1.more.setSetting("lx_port", "4031")
+        g1.more.setSetting("no_existe", "x") // se ignora (y se registra), no lanza
+        g1.home.setEyepiece("sw-super-10")
+        g1.scope.cancel()
+        val g2 = AppGraph(p)
+        assertFalse(g2.settings.current.nightMode)
+        assertEquals(4031, g2.settings.current.lx200Port)
+        assertEquals("sw-super-10", g2.settings.current.eyepieceId)
+        g2.scope.cancel()
+    }
+
     @Test fun watcherDeliversCurrentAndUpdates() = runBlocking {
         val (g, _) = graph()
         try {

@@ -40,6 +40,27 @@ final class AppHost {
         watches.append(graph.home.state.watch { [weak self] state in
             MainActor.assumeIsolated { self?.applyScreenSetting(state.settings.keepScreenOn) }
         })
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--demo") { startDemo(night: args.contains("--night")) }
+    }
+
+    /// Solo para las capturas automáticas de CI (`--demo`): simulador conectado, sitio en
+    /// Chihuahua, posición de inicio confirmada y alineación en marcha.
+    private func startDemo(night: Bool) {
+        let more = graph.more
+        more.setSetting(key: "night", value: night ? "true" : "false")
+        more.setSetting(key: "manual_loc", value: "true")
+        more.setSetting(key: "lat", value: "28.6353")
+        more.setSetting(key: "lon", value: "-106.0889")
+        more.setSetting(key: "elev", value: "1430")
+        graph.home.connect(mode: ConnectionMode.simulator)
+        let g = graph
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            g.home.confirmHome()
+            try? await Task.sleep(for: .seconds(1))
+            g.alignmentScreen.begin(mode: AlignmentMode.twoStar)
+        }
     }
 
     /// DETENER desde la Live Activity, el Centro de control, el botón de Acción o Siri.

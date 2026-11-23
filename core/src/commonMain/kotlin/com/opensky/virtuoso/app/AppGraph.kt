@@ -8,6 +8,7 @@ import com.opensky.virtuoso.database.targets.TargetCatalog
 import com.opensky.virtuoso.platform.PlatformLock
 import com.opensky.virtuoso.sensors.TubeOrientation
 import com.opensky.virtuoso.sensors.TubeOrientationEngine
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +22,15 @@ import kotlinx.coroutines.launch
  * Vive lo que vive la app.
  */
 class AppGraph(val platform: AppPlatform) {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    /**
+     * Ámbito de la app. Un error no capturado en un coroutine se registra en vez de cerrar la app
+     * (en iOS una excepción sin manejar termina el proceso).
+     */
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, e ->
+            Diagnostics.log("ERROR no controlado: ${e::class.simpleName}: ${e.message}")
+        },
+    )
 
     /** Todo lo que escribe el núcleo (Diagnostics) va al registro de diagnóstico. */
     val diagnostics = DiagnosticLog(platform.files, scope).also { log -> Diagnostics.sink = log::log }

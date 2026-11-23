@@ -97,7 +97,7 @@ struct HomeView: View {
                     }
                 }
             }
-            Hint(s.settings.observingMode.label)
+            Hint(s.opticalSummary)
         } header: {
             Text("Equipo")
         }
@@ -207,7 +207,7 @@ struct HomeView: View {
         Section {
             if let c = s.clock {
                 LabeledContent("UTC", value: c.utc).monospacedDigit()
-                LabeledContent("Local (\(c.zone))", value: c.local).monospacedDigit()
+                LabeledContent("Local (" + c.zone + ")", value: c.local).monospacedDigit()
                 LabeledContent("Tiempo sidéreo", value: c.lst).monospacedDigit()
             }
             Hint(s.time.detail)

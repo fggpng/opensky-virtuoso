@@ -40,6 +40,9 @@ jobs:
           name: OpenSky-ipa
           path: build/OpenSky.ipa
 
+      - name: Capturas en el simulador (iPhone 16 Pro Max)
+        run: ios/scripts/screenshots.sh
+
       - name: Guardar informes si algo falla
         if: failure()
         uses: actions/upload-artifact@v4

@@ -262,6 +262,10 @@ sealed class CatalogStatus {
     data class Ready(val stars: Int) : CatalogStatus()
     data class Error(val message: String) : CatalogStatus()
 
+    val isWorking: Boolean get() = this is Working
+    val isReady: Boolean get() = this is Ready
+    val isInstalled: Boolean get() = this !is NotInstalled
+
     /** Texto para la UI. */
     val label: String
         get() = when (this) {

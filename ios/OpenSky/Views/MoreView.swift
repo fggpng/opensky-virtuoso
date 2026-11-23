@@ -119,16 +119,16 @@ struct CatalogView: View {
         List {
             Section {
                 Text(s.catalogStatus.label)
-                if s.catalogStatus is CatalogStatus.Working { ProgressView() }
+                if s.catalogStatus.isWorking { ProgressView() }
             } header: {
                 Text("Estado")
             }
             Section {
                 Button { importing = true } label: { Label("Importar archivos…", systemImage: "square.and.arrow.down") }
                 Button { model.testCatalog() } label: { Label("Probar una búsqueda", systemImage: "magnifyingglass") }
-                    .disabled(!(s.catalogStatus is CatalogStatus.Ready))
+                    .disabled(!s.catalogStatus.isReady)
                 Button(role: .destructive) { confirmDelete = true } label: { Label("Borrar el catálogo", systemImage: "trash") }
-                    .disabled(s.catalogStatus is CatalogStatus.NotInstalled)
+                    .disabled(!s.catalogStatus.isInstalled)
             } footer: {
                 Text("Elige los tres archivos ya convertidos (tycho2.dat, tycho2.idx y tycho2.ref, de la herramienta catalog-builder) o los archivos oficiales del CDS (tyc2.dat.00.gz … tyc2.dat.19.gz y suppl_1.dat.gz) para convertirlos en el iPhone. También puedes copiarlos con la app Archivos a «En mi iPhone › OpenSky».")
             }
