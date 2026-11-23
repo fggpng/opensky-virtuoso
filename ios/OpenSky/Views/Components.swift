@@ -113,12 +113,13 @@ func cardinal(_ azDeg: Double) -> String {
 // MARK: - Piezas de interfaz
 
 /// Filas de lista que son botones (estrellas, objetivos, modos): texto normal en vez del color de
-/// acento, y atenuado mientras el botón está desactivado.
+/// acento, y atenuado mientras el botón está desactivado. Usa `Color.primary` (el color del texto):
+/// el estilo jerárquico `.primary` dentro de un botón sería el propio color de acento.
 private struct RowLabelStyle: ViewModifier {
     @Environment(\.isEnabled) private var enabled
 
     func body(content: Content) -> some View {
-        content.foregroundStyle(enabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+        content.foregroundStyle(enabled ? Color.primary : Color.secondary)
     }
 }
 
