@@ -30,6 +30,7 @@ extension View {
             .environment(\.nightMode, on)
             .preferredColorScheme(on ? .dark : nil)
             .grayscale(on ? 1 : 0)
+            .brightness(on ? -0.06 : 0) // fondos de las tarjetas casi negros: más contraste, menos luz
             .colorMultiply(on ? Palette.night : .white)
             .statusBarHidden(on)
             .persistentSystemOverlays(on ? .hidden : .automatic)
@@ -110,6 +111,22 @@ func cardinal(_ azDeg: Double) -> String {
 }
 
 // MARK: - Piezas de interfaz
+
+/// Filas de lista que son botones (estrellas, objetivos, modos): texto normal en vez del color de
+/// acento, y atenuado mientras el botón está desactivado.
+private struct RowLabelStyle: ViewModifier {
+    @Environment(\.isEnabled) private var enabled
+
+    func body(content: Content) -> some View {
+        content.foregroundStyle(enabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+    }
+}
+
+extension View {
+    func rowLabel() -> some View {
+        modifier(RowLabelStyle())
+    }
+}
 
 /// Indicador de estado en vivo: punto de color y texto.
 struct StatusChip: View {

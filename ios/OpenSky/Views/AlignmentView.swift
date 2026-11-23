@@ -136,7 +136,7 @@ struct AlignmentView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text("Alt " + deg(sug.horizontal.altDeg, decimals: 0)).monospacedDigit()
+                            Text("Alt " + deg(sug.horizontal.altDeg, decimals: 0)).monospacedDigit().foregroundStyle(.tint)
                             Text("Az \(azimuthText(sug.horizontal.azDeg)) \(cardinal(sug.horizontal.azDeg))")
                                 .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         }
@@ -144,6 +144,7 @@ struct AlignmentView: View {
                             Image(systemName: "scope").foregroundStyle(.tint)
                         }
                     }
+                    .rowLabel()
                 }
                 .disabled(s.busy || s.mount == nil)
             }
@@ -187,6 +188,7 @@ struct AlignmentView: View {
                         }
                         Text(mode.details).font(.caption).foregroundStyle(.secondary)
                     }
+                    .rowLabel()
                 }
                 .disabled(s.mount == nil)
             }

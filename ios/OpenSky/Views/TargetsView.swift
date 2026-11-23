@@ -125,6 +125,7 @@ struct TargetRowView: View {
                 }
             }
         }
+        .rowLabel()
         .contentShape(Rectangle())
     }
 }

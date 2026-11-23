@@ -59,9 +59,9 @@ struct StellariumView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             StatusChip(text: server.running ? "Activo" : "Detenido", tone: server.running ? .ok : .off)
-                            Text("\(server.name) · puerto \(server.port)").font(.headline)
+                            Text(verbatim: "\(server.name) · puerto \(server.port)").font(.headline)
                         }
-                        Text("Clientes conectados: \(server.clients)").font(.caption).foregroundStyle(.secondary)
+                        Text(verbatim: "Clientes conectados: \(server.clients)").font(.caption).foregroundStyle(.secondary)
                         if let err = server.lastError { Text(err).font(.caption).foregroundStyle(.red) }
                     }
                 }

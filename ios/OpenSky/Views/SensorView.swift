@@ -28,11 +28,13 @@ struct SensorView: View {
                     if o.interference {
                         WarningRow(text: "Interferencia magnética (metal, motores o imanes cerca): el acimut puede tener varios grados de error.")
                     }
-                } else {
+                } else if s.available {
                     HStack(spacing: 12) {
                         ProgressView()
                         Text("Esperando a los sensores…")
                     }
+                } else {
+                    Text("Sin lecturas").foregroundStyle(.secondary)
                 }
             } header: {
                 Text("El tubo apunta a")
